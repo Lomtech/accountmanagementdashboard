@@ -1,129 +1,170 @@
-# x1F Lead Dashboard
+# x1F Lead Dashboard v2
 
-Statisches Dashboard (Vanilla HTML/JS/CSS) auf Supabase-Daten — für Account-Manager im FSI-Bereich.
+Statisches Vanilla-Dashboard für x1F Sales Account-Manager im FSI-Bereich. Hosted auf Netlify, Daten aus Supabase.
 
-## Was ist drin?
+## Features
 
-- **Briefing** — Tagesübersicht: Top-Banken, Action-Queue, Segment-Heatmap
-- **Leads** — Filterbare Liste aller Banken mit aktiven Signalen
-- **Bank-Detail** — Pain-Signale, Decision-Maker, Mini-Netzwerk je Bank
-- **Signal-Feed** — alle Signale ≥ 60 Relevance, mit Pitch-Vorschlag
-- **Kontakte** — Decision-Maker-Verzeichnis mit Filter (Seniority, Bereich)
-- **Netzwerk** — interaktiver Graph aller Personen + Verbindungen (Cytoscape.js)
+| Seite | Was |
+|---|---|
+| **Briefing** (`#/`)        | Tagesübersicht: KPIs, Top-Leads, Action-Queue, Heatmap |
+| **Leads** (`#/leads`)      | Filterbare Bank-Liste + CSV-Export |
+| **Pipeline** (`#/pipeline`)| Kanban-View mit Drag&Drop (im Edit-Mode) |
+| **Signals** (`#/signals`)  | Signal-Feed mit Pitch-Vorschlag, Status-Update |
+| **Kontakte** (`#/contacts`)| Decision-Maker-Verzeichnis, ID-basiert für Connection-Anlage |
+| **Netzwerk** (`#/network`) | Cytoscape-Graph aller Personen + Verbindungen |
+| **Bank-Detail** (`#/bank/123`) | Pain-Signale + Decision-Maker + Mini-Graph + **Recherche-Helfer** |
 
-Keine Build-Tools, keine Frameworks. Drei Files: `index.html`, `styles.css`, `app.js`.
+## 🔍 Recherche-Helfer (Bank-Detail)
 
-## Datenquelle
+Pro Bank ein Klick → öffnet vorbereitete Suchen für:
+- Vorstand, CIO, CFO Recherche
+- SAP-Stellen
+- LinkedIn People-Suche
+- Geschäftsbericht
+- Pressemitteilungen
+- TED Ausschreibungen
+- Bundesanzeiger
+- Karriereseite der Bank
 
-Supabase Projekt `wlxolfkhkxembiuofmfa` (eu-west-2). Schreibt direkt aus dem Frontend per **publishable anon key** (RLS auf `SELECT` für `anon` ist aktiv).
+## ✏️ Edit-Mode
 
-Wenn du das Projekt umziehst, ändere oben in `app.js`:
-```js
-const SUPABASE_URL = "https://<dein-projekt>.supabase.co";
-const SUPABASE_KEY = "sb_publishable_...";
+Klick auf das ✏️-Icon in der Topbar → Login mit API-Key.
+
+**Was im Edit-Mode geht:**
+- Decision-Maker bearbeiten/anlegen/löschen (echte Namen, LinkedIn, E-Mail, Influence)
+- Connections zwischen Personen anlegen/löschen (auch cross-bank)
+- Bank-Stammdaten bearbeiten (Notizen, Mitarbeiter, x1F-Bestandskunden-Flag)
+- Outreach-Status pro Signal setzen (Dropdown direkt am Signal)
+- **Pipeline drag&drop**: Karten zwischen Statusspalten verschieben
+
+**API-Key setzen** (einmalig):
+1. Supabase Dashboard → Project Settings → Edge Functions → Manage Secrets
+2. Add new secret: `LEADS_API_KEY` = ein langes Random-Token (z.B. `openssl rand -hex 32`)
+3. Diesen Token im Dashboard im Edit-Login eingeben
+
+> Solange `LEADS_API_KEY` nicht gesetzt ist, akzeptiert die API jeden Wert (Dev-Modus).
+
+## Deploy
+
+Schon erledigt — Netlify build von `main` Branch. Nach `git push` deployt Netlify automatisch.
+
+```bash
+git add . && git commit -m "Update" && git push
 ```
 
-## Lokal testen
+## Datenmodell
+
+```
+banks (id, name, segment, country, hq_city, domain, parent_group, employees, total_assets_eur_bn, is_x1f_customer, notes)
+  ├─ signals (bank_id, title, x1f_relevance, signal_type, outreach_status, body, keywords_matched, source_url)
+  └─ contacts (bank_id, full_name, role_title, seniority, functional_area, influence_score,
+               is_decision_maker, is_placeholder, linkedin_url, email,
+               previous_employer, alma_mater, notes, source, source_url)
+
+connections (contact_a, contact_b, relationship, evidence, source_url, strength)
+
+Relationship-Typen:
+  reports_to, co_worker_current, co_worker_past, alumni,
+  co_speaker, board_interlock, co_author, referred_by, known_via
+```
+
+## Daten pflegen — drei Wege
+
+### A) Über das Dashboard (nach Edit-Mode-Login)
+- Bank-Detail → "+ Neu" auf Decision-Maker-Sektion
+- Bank-Detail → "+ Connection" auf Verbindungen
+- Bank-Detail → "Bearbeiten" für Stammdaten
+
+### B) Über die Edge Function API
+```bash
+# Outreach-Status setzen
+curl -X POST https://wlxolfkhkxembiuofmfa.supabase.co/functions/v1/leads-api/outreach \
+  -H "X-API-Key: $LEADS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"signal_id": 12, "status": "contacted", "note": "Erstgespräch"}'
+
+# Kontakt anlegen
+curl -X POST https://wlxolfkhkxembiuofmfa.supabase.co/functions/v1/leads-api/contact \
+  -H "X-API-Key: $LEADS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"bank_id": 1, "full_name": "Max Mustermann", "role_title": "CIO",
+       "seniority": "Vorstand", "influence_score": 90, "linkedin_url": "https://linkedin.com/in/..."}'
+
+# Bulk-Import von Signalen (für externe Scraper)
+curl -X POST https://wlxolfkhkxembiuofmfa.supabase.co/functions/v1/leads-api/ingest \
+  -H "X-API-Key: $LEADS_API_KEY" -H "Content-Type: application/json" \
+  -d '[{"bank_name_raw": "Deutsche Bank", "title": "Senior SAP Architect", "x1f_relevance": 80, ...}]'
+```
+
+### C) Direkt in Supabase Studio (SQL Editor)
+```sql
+-- Echten Namen statt Platzhalter setzen
+UPDATE public.contacts
+SET full_name = 'Max Mustermann', is_placeholder = false,
+    linkedin_url = 'https://linkedin.com/in/...', source_url = '...'
+WHERE id = 42;
+
+-- Cross-Bank-Connection
+INSERT INTO public.connections (contact_a, contact_b, relationship, evidence, strength)
+VALUES (12, 34, 'alumni', 'Beide vorher bei Deutsche Bank Frankfurt', 70);
+```
+
+## Scraping & Aktualisierung
+
+Aktuell läuft Scraping **manuell** durch Claude (mich). Für Automatisierung siehe [`AUTOMATION.md`](AUTOMATION.md) — Optionen:
+1. **GitHub Actions Cron + Playwright** (free, 4h Setup)
+2. **n8n self-hosted** (free, 1 Tag Setup)
+3. **Make.com + SerpAPI** (50 €/Monat, 1h Setup)
+4. **Apollo.io / Cognism API** (99-700 €/Monat, sales-grade, GDPR-clean)
+
+Alle Pfade rufen am Ende `POST /leads-api/ingest` auf. Format siehe Edge Function Code.
+
+## Dev / Lokal
 
 ```bash
 cd x1f-leads-dashboard
 python3 -m http.server 8080
-# oder: npx serve .
-```
-Dann: http://localhost:8080
-
-> Hinweis: einfach `index.html` doppelklicken funktioniert **nicht** (ES-Module brauchen `http://`).
-
-## Deploy auf Netlify
-
-**Variante A — Drag & Drop:**
-1. https://app.netlify.com/drop
-2. Den ganzen Ordner `x1f-leads-dashboard` reinziehen
-3. Fertig — du bekommst eine `*.netlify.app` URL
-
-**Variante B — Git-basiert:**
-1. Push den Ordner in ein GitHub-Repo
-2. Netlify → "Add new site" → "Import from Git"
-3. Build settings: leer lassen (Publish directory = `/`)
-4. Deploy
-
-**Custom Domain:** unter Site settings → Domain management.
-
-## Deploy auf GitHub Pages
-
-```bash
-cd x1f-leads-dashboard
-git init
-git add .
-git commit -m "x1F lead dashboard"
-git branch -M main
-git remote add origin git@github.com:<user>/x1f-leads-dashboard.git
-git push -u origin main
-```
-Dann auf GitHub: **Settings → Pages → Source: main → / (root) → Save.**
-
-URL: `https://<user>.github.io/x1f-leads-dashboard/`
-
-## Sicherheit / Datenschutz
-
-- Der Supabase **publishable key** ist explizit für Frontend-Nutzung gedacht und **kein Secret**.
-- Lese-Zugriff ist via **RLS-Policy** auf `SELECT` öffentlich freigegeben, weil die Daten aus öffentlichen Quellen kommen.
-- **Schreib-Zugriff** geht NICHT direkt aus dem Frontend — dafür gibt es die Edge Function `leads-api` (mit `X-API-Key`-Header) für externe Worker.
-- Wenn du das Dashboard nicht öffentlich machen willst:
-  - Netlify: **Password protection** (kostenpflichtig im Pro-Plan)
-  - GitHub Pages: nur in **Private Repo** mit Pages Pro
-  - Oder: einen einfachen Auth-Layer in `app.js` einbauen (z. B. Supabase Magic-Link)
-
-## Datenmodell-Quick-Ref
-
-```
-banks (id, name, segment, country, ...)
-  └─ signals (bank_id, title, x1f_relevance, signal_type, outreach_status, ...)
-  └─ contacts (bank_id, full_name, role_title, seniority, functional_area, influence_score, is_placeholder)
-
-connections (contact_a, contact_b, relationship, strength, evidence)
-  Relationship-Typen: reports_to, co_worker_current/past, alumni,
-                       co_speaker, board_interlock, co_author, referred_by, known_via
+# http://localhost:8080
 ```
 
-**Views (read-only)**:
-- `v_top_leads` · `v_outreach_pitches` · `v_action_queue` · `v_segment_heatmap`
-- `v_bank_contacts` · `v_network_nodes` · `v_network_edges` · `v_lead_full`
-- `heat_score` · `hot_signals`
+## Sicherheit
 
-## Daten pflegen
+- **anon-Key** (im Frontend hardcoded) ist kein Secret und nur für SELECT freigegeben
+- **API_KEY** ist Secret, nur in Supabase Edge Function Secrets
+- RLS-Policy erlaubt anon nur SELECT — kein direkter Write aus dem Frontend möglich
+- Wenn du das Dashboard nicht öffentlich willst: Netlify Password Protection (Pro-Plan) oder Supabase Auth Layer einbauen
 
-**Echte Namen statt Platzhalter:**
-```sql
-UPDATE public.contacts
-SET full_name = 'Max Mustermann',
-    is_placeholder = false,
-    linkedin_url = 'https://linkedin.com/in/...'
-WHERE id = 42;
+## Neue Features (v3)
+
+- **🌓 Dark/Light Theme-Toggle** in der Topbar (gespeichert in localStorage)
+- **🖨 Print-Briefing**: Klick auf 🖨 → druckfreundlicher Briefing-Ausdruck
+- **📱 Mobile Responsive**: Layout passt sich Smartphone an
+- **📝 Activity Log pro Bank**: Notizen, Calls, Meetings mit Timestamp + Typ
+- **✨ LLM-Pitch-Generator**: Klick auf ✨ am Signal → Claude generiert Outreach-Mail in deinem Tonfall
+- **🤖 GitHub Actions Auto-Crawler**: `scraper/` Ordner enthält Playwright-Worker, läuft automatisch jeden Mo 8 Uhr UTC
+
+### LLM-Pitch-Generator aktivieren
+
+In Supabase → Project Settings → Edge Functions → Secrets hinzufügen:
+```
+ANTHROPIC_API_KEY = sk-ant-...
 ```
 
-**Outreach-Status setzen** (per SQL oder Edge-Function):
-```sql
-SELECT public.set_outreach_status(123, 'contacted', 'Erstgespräch mit M. Mueller, Folge in 2 Wochen.');
-```
+Dann erscheint im Edit-Mode ein ✨-Icon neben Signalen — klicken → Tonalität wählen → fertige E-Mail bekommen.
 
-**Neue Verbindung anlegen:**
-```sql
-INSERT INTO public.connections(contact_a, contact_b, relationship, evidence, strength)
-VALUES (12, 34, 'alumni', 'Beide Goethe-Uni Frankfurt, BWL-Abschluss 2010', 60);
-```
+### Auto-Crawler aktivieren
 
-## Was fehlt (Backlog)
+1. GitHub Repo → Settings → Secrets and variables → Actions
+2. New repository secret: `LEADS_API_KEY = <dein-supabase-secret>`
+3. Workflow läuft automatisch jeden Montag 8 Uhr UTC, oder manuell via "Actions → x1F Lead Scraper → Run workflow"
 
-- Auth-Layer (z. B. Supabase Magic-Link) damit Dashboard nicht öffentlich
-- Edge Function für Bulk-Import von Signalen aus externem Scraper (TED, Bundesanzeiger)
-- Kanban-View für Pipeline (queued → contacted → meeting → won/lost)
-- Email-Templates pro Pitch-Typ generieren (LLM-basiert)
-- Push-Notification via Slack-Webhook bei neuen Hot Signals
+Konfigurierte Banken in `scraper/target_banks.json` editieren → commit → push → wird beim nächsten Lauf verwendet.
 
 ## Tech-Stack
 
-- Pure HTML/JS/CSS (keine Bundler, kein React)
-- ES-Modules direkt aus dem Browser via [esm.sh](https://esm.sh/)
-- [Supabase JS SDK v2](https://supabase.com/docs/reference/javascript/introduction)
-- [Cytoscape.js 3.30](https://js.cytoscape.org/) für Graph-Visualisierung
+- HTML/CSS/JS, keine Bundler, keine Frameworks
+- Supabase JS SDK v2 + Edge Functions (Deno) — leads-api v3
+- Cytoscape.js 3.30 für Graph
+- Anthropic Claude 3.5 Sonnet für Pitch-Generation
+- Playwright + GitHub Actions für Auto-Crawling
+- Netlify static hosting + GitHub auto-deploy
+
+Architektur-Details: siehe [ARCHITECTURE.md](ARCHITECTURE.md)

@@ -1,0 +1,22 @@
+[
+  { "bank": "Deutsche Bank",        "queries": ["Deutsche Bank SAP stellenangebot 2026", "Deutsche Bank S/4HANA"] },
+  { "bank": "Commerzbank",          "queries": ["Commerzbank SAP stellenangebot 2026"] },
+  { "bank": "DZ BANK",              "queries": ["DZ BANK SAP stelle 2026", "DZ BANK Fioneer"] },
+  { "bank": "KfW",                  "queries": ["KfW SAP S/4HANA stelle 2026"] },
+  { "bank": "Helaba",               "queries": ["Helaba SAP stelle 2026"] },
+  { "bank": "LBBW",                 "queries": ["LBBW SAP Treasury stelle 2026"] },
+  { "bank": "BayernLB",             "queries": ["BayernLB SAP stelle 2026"] },
+  { "bank": "DKB",                  "queries": ["DKB SAP stelle 2026"] },
+  { "bank": "Aareal Bank",          "queries": ["Aareal Bank SAP stelle 2026"] },
+  { "bank": "pbb Deutsche Pfandbriefbank", "queries": ["pbb SAP stelle 2026"] },
+  { "bank": "ING Deutschland",      "queries": ["ING Deutschland SAP stelle 2026"] },
+  { "bank": "HypoVereinsbank",      "queries": ["HypoVereinsbank SAP stelle 2026", "HVB SAP S/4HANA"] },
+  { "bank": "Deutsche Bundesbank",  "queries": ["Bundesbank SAP S/4HANA Ausschreibung 2026"] },
+  { "bank": "Allianz",              "queries": ["Allianz SAP stelle 2026"] },
+  { "bank": "Munich Re",            "queries": ["Munich Re SAP stelle 2026"] },
+  { "bank": "SV SparkassenVersicherung", "queries": ["SparkassenVersicherung SAP FS-CD stelle 2026"] },
+  { "bank": "UBS",                  "queries": ["UBS SAP Engineer stelle 2026 Zurich"] },
+  { "bank": "Erste Group",          "queries": ["Erste Group SAP stelle 2026"] },
+  { "bank": "Raiffeisen Bank International", "queries": ["RBI Raiffeisen SAP stelle 2026"] },
+  { "bank": "BAWAG P.S.K.",         "queries": ["BAWAG SAP stelle 2026"] }
+]

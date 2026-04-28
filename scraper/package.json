@@ -1,0 +1,13 @@
+{
+  "name": "x1f-leads-scraper",
+  "version": "1.0.0",
+  "description": "x1F Lead-Gen Auto-Crawler — Google Jobs Widget → Supabase via leads-api",
+  "type": "module",
+  "scripts": {
+    "scrape": "node scrape.js",
+    "install-browsers": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

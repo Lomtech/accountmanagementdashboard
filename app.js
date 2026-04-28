@@ -123,6 +123,24 @@ window.addEventListener("hashchange", navigate);
 $("#reload-btn").addEventListener("click", () => { pingDb(); navigate(); });
 $("#edit-btn").addEventListener("click", toggleEditMode);
 
+// Theme toggle
+const THEME_LS = "x1f_theme";
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+  localStorage.setItem(THEME_LS, t);
+}
+applyTheme(localStorage.getItem(THEME_LS) ?? "light");
+$("#theme-btn").addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  applyTheme(cur);
+});
+
+// Print
+$("#print-btn").addEventListener("click", () => {
+  if (location.hash !== "#/") location.hash = "#/";
+  setTimeout(() => window.print(), 300);
+});
+
 function toggleEditMode() {
   if (EDIT_MODE) {
     setEditMode(false);
@@ -413,12 +431,13 @@ function bindKanbanDnD() {
 // ===========================================================================
 async function renderBankDetail(bankId) {
   app.innerHTML = `<div class="loading">Lade Bank-Detail…</div>`;
-  const [bRes, sRes, cRes, conRes, hsRes] = await Promise.all([
+  const [bRes, sRes, cRes, conRes, hsRes, actRes] = await Promise.all([
     sb.from("banks").select("*").eq("id", bankId).single(),
     sb.from("signals").select("*").eq("bank_id", bankId).order("x1f_relevance", { ascending: false }),
     sb.from("contacts").select("*").eq("bank_id", bankId).order("influence_score", { ascending: false, nullsFirst: false }),
     sb.from("connections").select("*"),
     sb.from("heat_score").select("heat_score").eq("bank_id", bankId).maybeSingle(),
+    sb.from("bank_activity").select("*").eq("bank_id", bankId).order("created_at", { ascending: false }).limit(50),
   ]);
   if (bRes.error) throw bRes.error;
   const b = bRes.data;
@@ -426,6 +445,7 @@ async function renderBankDetail(bankId) {
   const contacts = cRes.data ?? [];
   const allConns = conRes.data ?? [];
   const heat = hsRes.data?.heat_score ?? 0;
+  const activity = actRes.data ?? [];
 
   const myContactIds = new Set(contacts.map(c => String(c.id)));
   const relevantConns = allConns.filter(cn =>
@@ -515,6 +535,34 @@ async function renderBankDetail(bankId) {
           </div>` : ""}
         <div class="section">
           <div class="section-header">
+            <h2>Aktivitäten / Notizen (${activity.length})</h2>
+          </div>
+          ${EDIT_MODE ? `
+            <div class="activity-form">
+              <textarea id="act-input" placeholder="Neue Notiz / Call-Zusammenfassung / Meeting…"></textarea>
+              <div class="activity-actions">
+                <select id="act-type">
+                  <option value="note">Notiz</option>
+                  <option value="call">Call</option>
+                  <option value="email">E-Mail</option>
+                  <option value="meeting">Meeting</option>
+                  <option value="custom">Sonstiges</option>
+                </select>
+                <button class="primary small" onclick="window._addActivity(${bankId})">+ Hinzufügen</button>
+              </div>
+            </div>` : ""}
+          <div class="activity-list">
+            ${activity.length === 0 ? '<div class="empty small">Noch keine Aktivitäten erfasst.</div>' :
+              activity.map(a => `
+                <div class="activity-item">
+                  <div class="activity-meta">${esc(a.activity_type)} · ${fmtDate(a.created_at)} · ${esc(a.actor)}</div>
+                  <div class="activity-content">${esc(a.content)}</div>
+                </div>`).join("")}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-header">
             <h2>Stammdaten</h2>
             ${EDIT_MODE ? `<button class="primary small" onclick="window._editBank(${bankId})">Bearbeiten</button>` : ""}
           </div>
@@ -545,6 +593,34 @@ async function renderBankDetail(bankId) {
     try { await apiCall("DELETE", "contact?id=" + id); navigate(); }
     catch (e) { alert("Fehler: " + e.message); }
   };
+  window._addActivity = async (bid) => {
+    const content = $("#act-input").value.trim();
+    if (!content) return;
+    const type = $("#act-type").value;
+    try {
+      await apiCall("POST", "activity", { bank_id: bid, content, type });
+      navigate();
+    } catch (e) { alert("Fehler: " + e.message); }
+  };
+  window._generatePitch = async (signal_id, contact_id) => {
+    try {
+      const tone = prompt("Tonalität? (z.B. professionell-knapp / freundlich / formell)", "professionell-knapp");
+      if (!tone) return;
+      const j = await apiCall("POST", "generate-pitch", { signal_id, contact_id, tone });
+      const html = `
+        <div class="modal-backdrop" id="modal">
+          <div class="modal" style="max-width:640px">
+            <h3>Generierter Pitch (${esc(j.model ?? "Claude")})</h3>
+            <div class="pitch-output">${esc(j.pitch)}</div>
+            <div class="modal-actions">
+              <button onclick="navigator.clipboard.writeText(\`${j.pitch.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`).then(()=>alert('Kopiert'))">In Zwischenablage</button>
+              <button class="primary" onclick="closeModal()">Schließen</button>
+            </div>
+          </div>
+        </div>`;
+      document.body.insertAdjacentHTML("beforeend", html);
+    } catch (e) { alert("Fehler: " + e.message); }
+  };
 }
 
 function renderSignalItem(s) {
@@ -558,7 +634,8 @@ function renderSignalItem(s) {
           <select class="status-edit" data-signal-id="${s.id}" onchange="window._setStatus(${s.id}, this.value)">
             ${["new","queued","contacted","meeting","won","lost","ignored"].map(st =>
               `<option value="${st}"${st === (s.outreach_status ?? "new") ? " selected" : ""}>${st}</option>`).join("")}
-          </select>` : ""}
+          </select>
+          <button class="icon-btn" title="Pitch generieren (Claude)" onclick="window._generatePitch(${s.id})">✨</button>` : ""}
       </div>
       <div class="meta-line">
         ${esc(s.source ?? "")} ${s.signal_date ? `· ${fmtDate(s.signal_date)}` : ""}

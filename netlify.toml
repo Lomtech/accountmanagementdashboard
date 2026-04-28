@@ -1,6 +1,8 @@
 # Netlify config — kein Build-Step, statisch
 [build]
-  publish = "."
+  publish    = "."
+  # Ignoriere scraper-Folder (Playwright-Worker, hat nichts mit Frontend zu tun)
+  ignore     = "git diff --quiet HEAD^ HEAD -- ':!scraper/**' ':!.github/**' ':!*.md'"
 
 # SPA-Fallback fuer Hash-Routing nicht notwendig (alle Routes laufen ueber #...)
 # Aber falls du auf path-routing umstellst, hier aktivieren:

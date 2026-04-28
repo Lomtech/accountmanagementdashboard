@@ -1,0 +1,48 @@
+name: x1F Lead Scraper
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'   # jeden Montag 8 Uhr UTC
+  workflow_dispatch:       # manuell triggerbar
+    inputs:
+      max_targets:
+        description: 'Max number of banks to process'
+        default: '30'
+        required: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'scraper/package.json'
+
+      - name: Install scraper deps
+        working-directory: scraper
+        run: npm install
+
+      - name: Install Chromium
+        working-directory: scraper
+        run: npx playwright install --with-deps chromium
+
+      - name: Run scraper
+        working-directory: scraper
+        env:
+          LEADS_API_KEY: ${{ secrets.LEADS_API_KEY }}
+          EDGE_FN_URL:   https://wlxolfkhkxembiuofmfa.supabase.co/functions/v1/leads-api
+          SLEEP_MS:      3000
+          MAX_TARGETS:   ${{ inputs.max_targets || '30' }}
+        run: node scrape.js
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Scraper failed - check logs"
