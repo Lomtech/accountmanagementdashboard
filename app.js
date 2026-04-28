@@ -128,11 +128,14 @@ const routes = [
   { path: /^\/?$/,                    render: renderBriefing },
   { path: /^\/leads$/,                render: renderLeads },
   { path: /^\/pipeline$/,             render: renderPipeline },
+  { path: /^\/revenue$/,              render: renderRevenue },
   { path: /^\/bank\/(\d+)$/,          render: (m) => renderBankDetail(parseInt(m[1])) },
   { path: /^\/signals$/,              render: renderSignals },
   { path: /^\/contacts$/,             render: renderContacts },
   { path: /^\/network$/,              render: renderNetwork },
 ];
+
+const fmtEur = (v) => v == null ? "—" : "€ " + Number(v).toLocaleString("de-DE", { maximumFractionDigits: 0 });
 
 function navigate() {
   const hash = location.hash.slice(1) || "/";
@@ -459,6 +462,105 @@ function bindKanbanDnD() {
 }
 
 // ===========================================================================
+//   PAGE: Revenue (Pipeline-Attribution)
+// ===========================================================================
+async function renderRevenue() {
+  app.innerHTML = `<div class="loading">Lade Revenue-Übersicht…</div>`;
+  const r = await fetch(`${EDGE_FN_URL}/attribution`);
+  if (!r.ok) throw new Error("Attribution-Endpoint nicht erreichbar");
+  const j = await r.json();
+  const k = j.kpis ?? {};
+  const funnel = j.funnel ?? [];
+  const byType = j.by_type ?? [];
+  const stages = ["new","queued","contacted","meeting","won","lost"];
+  const stageColors = { new:"#6b7280", queued:"#6366f1", contacted:"#0891b2", meeting:"#f59e0b", won:"#16a34a", lost:"#dc2626" };
+  const fMap = Object.fromEntries(funnel.map(f => [f.outreach_status, f]));
+  const maxCount = Math.max(...stages.map(s => fMap[s]?.count ?? 0), 1);
+
+  app.innerHTML = `
+    <div class="page-header">
+      <div><h1>💰 Revenue & Attribution</h1>
+      <p>Was hat der Tool-gestützte Pipeline-Aufbau eingebracht?</p></div>
+    </div>
+
+    <div class="cards">
+      <div class="card accent">
+        <div class="label">Pipeline-Wert</div>
+        <div class="value">${fmtEur(k.pipeline_value)}</div>
+        <div class="sub">${k.active_signals ?? 0} aktive Signale</div>
+      </div>
+      <div class="card" style="border-left:3px solid var(--good)">
+        <div class="label">Won (closed)</div>
+        <div class="value" style="color:var(--good)">${fmtEur(k.won_value)}</div>
+        <div class="sub">${k.won_count ?? 0} Deals</div>
+      </div>
+      <div class="card">
+        <div class="label">Win-Rate</div>
+        <div class="value">${k.win_rate_pct ?? 0}%</div>
+        <div class="sub">won / (won+lost)</div>
+      </div>
+      <div class="card">
+        <div class="label">Contact → Meeting</div>
+        <div class="value">${k.contact_to_meeting_pct ?? 0}%</div>
+        <div class="sub">Conversion zu Termin</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><h2>Pipeline-Funnel</h2></div>
+      <div style="padding:16px">
+        ${stages.map(s => {
+          const f = fMap[s] ?? { count: 0, total_value: 0 };
+          const w = (f.count / maxCount) * 100;
+          return `
+            <div style="display:grid;grid-template-columns:140px 1fr 140px 100px;gap:12px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+              <div style="font-weight:600">${s}</div>
+              <div style="background:${stageColors[s]}20;border-radius:4px;height:28px;width:${w}%;min-width:30px;display:flex;align-items:center;padding:0 8px;color:${stageColors[s]};font-weight:600">${f.count}</div>
+              <div class="muted">${fmtEur(f.total_value)}</div>
+              <div class="muted small right">Ø Rel: ${f.avg_relevance ?? "—"}</div>
+            </div>`;
+        }).join("")}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><h2>Performance pro Signal-Typ</h2></div>
+      <table>
+        <thead><tr><th>Typ</th><th class="numeric">Total</th><th class="numeric">Won</th>
+                <th class="numeric">Lost</th><th class="numeric">Win-Rate</th>
+                <th class="numeric">Won-Wert</th><th class="numeric">Ø Deal</th></tr></thead>
+        <tbody>
+          ${byType.map(t => `
+            <tr>
+              <td>${signalBadge(t.signal_type)}</td>
+              <td class="numeric">${t.total}</td>
+              <td class="numeric">${t.won}</td>
+              <td class="numeric">${t.lost}</td>
+              <td class="numeric">${t.win_rate_pct}%</td>
+              <td class="numeric">${fmtEur(t.won_value)}</td>
+              <td class="numeric">${fmtEur(t.avg_won_deal)}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-header"><h2>So fütterst du das Tool</h2></div>
+      <div style="padding:14px 16px;font-size:13px">
+        <p>Sobald du im Dashboard einen Deal abschließt:</p>
+        <ol>
+          <li>Bank-Detail aufrufen → Edit-Mode aktiv</li>
+          <li>Beim Signal: Deal-Wert eintragen + Status auf <code>won</code> setzen</li>
+          <li>Pipeline-Wert hier auf der Revenue-Page wächst sofort</li>
+          <li>Bei Won: Slack postet automatisch 🎉 (wenn SLACK_WEBHOOK_URL gesetzt)</li>
+        </ol>
+        <p class="muted">Pro Deal-Eintrag siehst du danach: welcher Signal-Typ wirklich Geld bringt → Tool wird mit der Zeit klüger.</p>
+      </div>
+    </div>
+  `;
+}
+
+// ===========================================================================
 //   PAGE: Bank Detail (mit Research-Helpers + Edit)
 // ===========================================================================
 async function renderBankDetail(bankId) {
@@ -519,7 +621,10 @@ async function renderBankDetail(bankId) {
           ${b.hq_city ? `· ${esc(b.hq_city)}` : ""}
           ${b.parent_group ? `· Gruppe: ${esc(b.parent_group)}` : ""}</p>
       </div>
-      <div><a href="#/leads">← Zurück zur Liste</a></div>
+      <div class="gap">
+        <button class="primary" onclick="window._battleCard(${bankId})" title="Claude generiert ein Briefing für deinen Call">📋 Battle-Card</button>
+        <a href="#/leads">← Zurück</a>
+      </div>
     </div>
 
     <div class="cards">
@@ -634,6 +739,43 @@ async function renderBankDetail(bankId) {
       navigate();
     } catch (e) { alert("Fehler: " + e.message); }
   };
+  window._battleCard = async (bid) => {
+    const tone = "praezise-strategisch";
+    const loadingHtml = `
+      <div class="modal-backdrop" id="modal">
+        <div class="modal" style="max-width:680px">
+          <h3>📋 Battle-Card wird generiert…</h3>
+          <p class="muted small">Claude verdichtet alle Bank-Daten zu einem 1-Seiten-Brief. Dauert 5-10s.</p>
+          <div class="loading">⏳</div>
+        </div>
+      </div>`;
+    document.body.insertAdjacentHTML("beforeend", loadingHtml);
+    try {
+      const j = await apiCall("POST", "battle-card", { bank_id: bid, tone });
+      const cardText = j.battle_card ?? "";
+      const cardHtml = simpleMarkdownToHtml(cardText);
+      $("#modal").remove();
+      const html = `
+        <div class="modal-backdrop" id="modal">
+          <div class="modal" style="max-width:760px;max-height:90vh">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+              <h3 style="margin:0">📋 Battle-Card</h3>
+              <span class="muted small">Generated by ${esc(j.model)}</span>
+            </div>
+            <div class="battle-card-body">${cardHtml}</div>
+            <div class="modal-actions">
+              <button onclick="navigator.clipboard.writeText(\`${cardText.replace(/`/g,'\\`').replace(/\$/g,'\\$')}\`).then(()=>alert('In Zwischenablage'))">📋 Kopieren</button>
+              <button onclick="window.print()">🖨 Drucken</button>
+              <button class="primary" onclick="closeModal()">Schließen</button>
+            </div>
+          </div>
+        </div>`;
+      document.body.insertAdjacentHTML("beforeend", html);
+    } catch (e) {
+      $("#modal")?.remove();
+      alert("Fehler: " + e.message);
+    }
+  };
   window._generatePitch = async (signal_id, contact_id) => {
     try {
       const tone = prompt("Tonalität? (z.B. professionell-knapp / freundlich / formell)", "professionell-knapp");
@@ -656,18 +798,22 @@ async function renderBankDetail(bankId) {
 }
 
 function renderSignalItem(s) {
+  const dealBadge = s.deal_value ? `<span class="badge x1f">€ ${Number(s.deal_value).toLocaleString("de-DE", {maximumFractionDigits: 0})} ${s.deal_status ?? ""}</span>` : "";
   return `
     <div class="signal-item">
       <div class="head">
         <span class="title">${esc(s.title)}</span>
         ${heatBadge(s.x1f_relevance)}
         ${signalBadge(s.signal_type)}
+        ${dealBadge}
         ${EDIT_MODE ? `
           <select class="status-edit" data-signal-id="${s.id}" onchange="window._setStatus(${s.id}, this.value)">
             ${["new","queued","contacted","meeting","won","lost","ignored"].map(st =>
               `<option value="${st}"${st === (s.outreach_status ?? "new") ? " selected" : ""}>${st}</option>`).join("")}
           </select>
-          <button class="icon-btn" title="Pitch generieren (Claude)" onclick="window._generatePitch(${s.id})">✨</button>` : ""}
+          <button class="icon-btn" title="Pitch generieren (Claude)" onclick="window._generatePitch(${s.id})">✨</button>
+          <button class="icon-btn" title="Deal-Wert / Status setzen" onclick="window._editDeal(${s.id}, ${s.deal_value ?? 'null'}, '${s.deal_status ?? "pipeline"}')">💰</button>
+          <button class="icon-btn" title="Slack-Alert posten" onclick="window._slackNotify(${s.id})">🔔</button>` : ""}
       </div>
       <div class="meta-line">
         ${esc(s.source ?? "")} ${s.signal_date ? `· ${fmtDate(s.signal_date)}` : ""}
@@ -683,6 +829,70 @@ window._setStatus = async (signal_id, status) => {
   try { await apiCall("POST", "outreach", { signal_id, status }); navigate(); }
   catch (e) { alert("Fehler: " + e.message); }
 };
+
+window._editDeal = (signal_id, currentValue, currentStatus) => {
+  const html = `
+    <div class="modal-backdrop" id="modal">
+      <div class="modal" style="max-width:420px">
+        <h3>💰 Deal aktualisieren</h3>
+        <div class="form-grid">
+          <label>Deal-Wert (EUR)<input id="d-val" type="number" step="1000" value="${currentValue !== null && currentValue !== undefined ? currentValue : ''}" placeholder="z.B. 250000"></label>
+          <label>Status
+            <select id="d-stat">
+              ${["pipeline","won","lost","disqualified"].map(s =>
+                `<option${s === currentStatus ? " selected" : ""}>${s}</option>`).join("")}
+            </select>
+          </label>
+          <label>Notizen<textarea id="d-notes" rows="3" placeholder="Kontext zum Deal…"></textarea></label>
+        </div>
+        <div class="modal-actions">
+          <button onclick="closeModal()">Abbrechen</button>
+          <button class="primary" id="d-save">Speichern</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+  $("#d-save").onclick = async () => {
+    const payload = {
+      signal_id,
+      deal_value: $("#d-val").value ? parseFloat($("#d-val").value) : null,
+      deal_status: $("#d-stat").value,
+      deal_notes: $("#d-notes").value.trim() || null,
+    };
+    try { await apiCall("POST", "deal", payload); closeModal(); navigate(); }
+    catch (e) { alert("Fehler: " + e.message); }
+  };
+};
+
+window._slackNotify = async (signal_id) => {
+  try {
+    const j = await apiCall("POST", "slack-notify", { signal_id });
+    if (j.posted) alert("✓ In Slack gepostet");
+    else alert("Slack-Webhook nicht konfiguriert. SLACK_WEBHOOK_URL in Supabase Secrets setzen.");
+  } catch (e) { alert("Fehler: " + e.message); }
+};
+
+// Simple markdown → HTML (für Battle-Card)
+function simpleMarkdownToHtml(md) {
+  if (!md) return "";
+  let html = esc(md);
+  // headings
+  html = html.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+  html = html.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+  html = html.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+  // bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // italic
+  html = html.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+  // ordered + unordered list items
+  html = html.replace(/^(\d+)\.\s+(.+)$/gm, "<li>$2</li>");
+  html = html.replace(/^[-*]\s+(.+)$/gm, "<li>$1</li>");
+  // wrap consecutive <li> in <ul>
+  html = html.replace(/(<li>.*?<\/li>(\s*<li>.*?<\/li>)+)/gs, "<ul>$1</ul>");
+  // line breaks
+  html = html.replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>");
+  return `<p>${html}</p>`;
+}
 
 function renderContactItem(c, editable) {
   const inf = c.influence_score ?? 0;
