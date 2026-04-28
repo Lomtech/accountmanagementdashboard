@@ -132,6 +132,39 @@ python3 -m http.server 8080
 - RLS-Policy erlaubt anon nur SELECT — kein direkter Write aus dem Frontend möglich
 - Wenn du das Dashboard nicht öffentlich willst: Netlify Password Protection (Pro-Plan) oder Supabase Auth Layer einbauen
 
+## Signal-Taxonomie (v4)
+
+23 Trigger-Typen die ein FSI-Account-Manager trackt — jeder mit eigener Pitch-Logik:
+
+| Typ | Was | x1F-Hebel |
+|---|---|---|
+| 👤 `job_posting` | SAP-Stellen | Beratungs-Pitch |
+| 📋 `tender` | Öffentliche Ausschreibung | Bidder-Position |
+| 🪑 `leadership_change` | CEO/CIO/CFO-Wechsel | 100-Tage-Trigger |
+| ⚖️ `regulatory_deadline` | DORA/CSRD/Basel IV/IFRS | Pflicht-Budget |
+| 🤝 `ma_activity` | M&A / Carve-out | System-Konsolidierung |
+| ✂️ `restructuring` | Stellenabbau / Effizienz | Automatisierung |
+| ☁️ `cloud_migration` | RISE/GROW with SAP | Migration Services |
+| ⭐ `customer_reference` | SAP-Customer-Story | Cross-Sell |
+| 💰 `earnings_mention` | CFO commits IT-Budget | Strategie-Gespräch |
+| 📊 `annual_report_mention` | Geschäftsbericht-Hint | Roadmap-Alignment |
+| 🎤 `conference_talk` | Banking-/SAP-Sprecher | Direkt-Kontakt |
+| 🏁 `competitor_win` | KPMG/Deloitte gewinnt | Sub-Bidder |
+| 🚨 `compliance_finding` | BaFin/MaRisk | Schnell-Fix |
+| 💡 `innovation_signal` | Innovation Lab | Plattform-Partner |
+| 🏢 `office_expansion` | New-Market | Multi-Site |
+| 🔄 `vendor_switch` | Avaloq/Temenos | SAP-Pfad |
+| ⚠️ `sanction_event` | Sanktion/Strafe | Remediation |
+| 👥 `aufsichtsrat_change` | AR-Wechsel | Top-Down |
+| 🤝 `partnership` | Tech-Partnerschaft | Ecosystem |
+| 📢 `project_announcement` | IT-Projekt-Announcement | Sofort-Kontakt |
+| 🛠️ `tech_stack_signal` | GitHub/Patente | Architektur-Workshop |
+| 📈 `directors_dealings` | Insider-Trades | Strategy-Watch |
+| 📰 `press_release` | Allgemeine PR | Kontext-Aufbau |
+
+Volle Pitch-Templates pro Typ in `public.v_outreach_pitches` (SQL-View).
+Auto-Klassifikation: `scraper/scrape.js → classifyType()` mappt Title+Snippet auf Typ.
+
 ## Neue Features (v3)
 
 - **🌓 Dark/Light Theme-Toggle** in der Topbar (gespeichert in localStorage)
