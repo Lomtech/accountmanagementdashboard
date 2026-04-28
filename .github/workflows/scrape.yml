@@ -1,9 +1,16 @@
 name: x1F Lead Scraper
 
+# CRON-SYNTAX:  Min Hour DayOfMonth Month DayOfWeek
+#   '0 6 * * *'      = jeden Tag 6:00 UTC (= 7-8 Uhr DE)
+#   '0 6,18 * * *'   = 2x täglich (6 + 18 UTC)
+#   '0 8 * * 1-5'    = Mo–Fr 8 UTC
+#   '0 8 * * 1'      = nur Mo 8 UTC
+#   '0 */4 * * *'    = alle 4 Stunden
+# Tipp: GitHub Actions kann Crons um 5-15 Min verzögern — exakte Zeiten nicht zuverlässig.
 on:
   schedule:
-    - cron: '0 8 * * 1'   # jeden Montag 8 Uhr UTC
-  workflow_dispatch:       # manuell triggerbar
+    - cron: '0 6 * * *'   # täglich 6:00 UTC
+  workflow_dispatch:       # manueller Trigger via "Actions → Run workflow"
     inputs:
       max_targets:
         description: 'Max number of banks to process'
