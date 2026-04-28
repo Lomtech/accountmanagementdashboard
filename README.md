@@ -132,6 +132,52 @@ python3 -m http.server 8080
 - RLS-Policy erlaubt anon nur SELECT — kein direkter Write aus dem Frontend möglich
 - Wenn du das Dashboard nicht öffentlich willst: Netlify Password Protection (Pro-Plan) oder Supabase Auth Layer einbauen
 
+## Boss-Demo-Features (v6)
+
+### 📋 Battle-Card (auf Bank-Detail)
+Klick auf **"📋 Battle-Card"** auf jeder Bank-Detail-Seite → Claude generiert in 5-10 Sek ein 1-Seiten-Briefing mit:
+- Top-3 Pain-Signale
+- Decision-Maker-Reihenfolge (wer zuerst, warum)
+- 3 konkrete Pitch-Hooks
+- Why-Now-Argument
+- Risiken / Vorsicht
+- 3 Mail-Subject-Vorschläge
+
+Alles als Markdown — kopierbar in Notion/OneNote, druckbar, klipboard-ready.
+
+### 💰 Revenue-Page (`#/revenue`)
+Pipeline-Attribution mit:
+- **Pipeline-Wert** (Summe deal_value für offene Deals)
+- **Won-Wert** (Summe abgeschlossener Deals)
+- **Win-Rate** (won / (won+lost))
+- **Funnel-Visualisierung** new → queued → contacted → meeting → won/lost
+- **Performance pro Signal-Typ** — welcher Trigger bringt das meiste Geld?
+
+Pro Deal eintragen: Edit-Mode → 💰-Icon am Signal → Wert + Status setzen.
+
+### 🔔 Slack-Webhook (Hot-Signal-Alerts)
+- Bei jedem neuen Signal mit `x1f_relevance >= 80`: automatisch in Slack posten
+- Bei Deal-Status `won`: 🎉-Notification
+- Manuell pro Signal: 🔔-Icon im Edit-Mode
+
+**Setup:**
+1. Slack: **Apps → Incoming Webhooks → Add to Workspace**
+2. Channel auswählen (z.B. `#sales-x1f-leads`)
+3. Webhook-URL kopieren (`https://hooks.slack.com/services/T.../B.../xxx`)
+4. Supabase: **Project Settings → Edge Functions → Secrets → New**
+   - Name: `SLACK_WEBHOOK_URL`
+   - Value: die URL aus Schritt 3
+5. Save → ab nächstem `/ingest` oder `/slack-notify`-Call landen Alerts im Channel
+
+**Test:**
+```bash
+KEY=$(cat .leads-secrets.local)
+curl -X POST "https://wlxolfkhkxembiuofmfa.supabase.co/functions/v1/leads-api/slack-notify" \
+  -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
+  -d '{"signal_id": 2}'
+```
+Erwartet: `{"posted": true}` + Nachricht im Slack-Channel.
+
 ## Signal-Taxonomie (v4)
 
 23 Trigger-Typen die ein FSI-Account-Manager trackt — jeder mit eigener Pitch-Logik:

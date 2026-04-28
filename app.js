@@ -754,6 +754,7 @@ async function renderBankDetail(bankId) {
       const j = await apiCall("POST", "battle-card", { bank_id: bid, tone });
       const cardText = j.battle_card ?? "";
       const cardHtml = simpleMarkdownToHtml(cardText);
+      window._lastBattleCard = cardText;  // stash für Copy-Button
       $("#modal").remove();
       const html = `
         <div class="modal-backdrop" id="modal">
@@ -764,7 +765,7 @@ async function renderBankDetail(bankId) {
             </div>
             <div class="battle-card-body">${cardHtml}</div>
             <div class="modal-actions">
-              <button onclick="navigator.clipboard.writeText(\`${cardText.replace(/`/g,'\\`').replace(/\$/g,'\\$')}\`).then(()=>alert('In Zwischenablage'))">📋 Kopieren</button>
+              <button onclick="window._copyBattleCard()">📋 Kopieren</button>
               <button onclick="window.print()">🖨 Drucken</button>
               <button class="primary" onclick="closeModal()">Schließen</button>
             </div>
@@ -776,18 +777,35 @@ async function renderBankDetail(bankId) {
       alert("Fehler: " + e.message);
     }
   };
+
+  window._copyBattleCard = async () => {
+    try {
+      await navigator.clipboard.writeText(window._lastBattleCard ?? "");
+      const btn = event?.target;
+      if (btn) { const orig = btn.textContent; btn.textContent = "✓ Kopiert!"; setTimeout(() => btn.textContent = orig, 1500); }
+    } catch (e) { alert("Copy fehlgeschlagen: " + e.message); }
+  };
+
+  window._copyPitch = async () => {
+    try {
+      await navigator.clipboard.writeText(window._lastPitch ?? "");
+      const btn = event?.target;
+      if (btn) { const orig = btn.textContent; btn.textContent = "✓ Kopiert!"; setTimeout(() => btn.textContent = orig, 1500); }
+    } catch (e) { alert("Copy fehlgeschlagen: " + e.message); }
+  };
   window._generatePitch = async (signal_id, contact_id) => {
     try {
       const tone = prompt("Tonalität? (z.B. professionell-knapp / freundlich / formell)", "professionell-knapp");
       if (!tone) return;
       const j = await apiCall("POST", "generate-pitch", { signal_id, contact_id, tone });
+      window._lastPitch = j.pitch ?? "";  // stash für Copy
       const html = `
         <div class="modal-backdrop" id="modal">
           <div class="modal" style="max-width:640px">
             <h3>Generierter Pitch (${esc(j.model ?? "Claude")})</h3>
             <div class="pitch-output">${esc(j.pitch)}</div>
             <div class="modal-actions">
-              <button onclick="navigator.clipboard.writeText(\`${j.pitch.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`).then(()=>alert('Kopiert'))">In Zwischenablage</button>
+              <button onclick="window._copyPitch()">📋 In Zwischenablage</button>
               <button class="primary" onclick="closeModal()">Schließen</button>
             </div>
           </div>
