@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>x1F Lead Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://wlxolfkhkxembiuofmfa.supabase.co">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">x1F</span>
+      <span class="title">FSI Lead Dashboard</span>
+    </div>
+    <nav id="nav">
+      <a href="#/"          data-route="/">Briefing</a>
+      <a href="#/leads"     data-route="/leads">Leads</a>
+      <a href="#/signals"   data-route="/signals">Signals</a>
+      <a href="#/contacts"  data-route="/contacts">Kontakte</a>
+      <a href="#/network"   data-route="/network">Netzwerk</a>
+    </nav>
+    <div class="meta">
+      <span id="connection-status" class="dot disconnected" title="Supabase Status"></span>
+      <button id="reload-btn" title="Daten neu laden" aria-label="Reload">↻</button>
+    </div>
+  </header>
+
+  <main id="app">
+    <div class="loading">Lade Daten…</div>
+  </main>
+
+  <footer class="footer">
+    <span>x1F Lead-Gen MVP · Daten aus Supabase · Heat-Score = Σ Relevanz letzter 90 Tage</span>
+  </footer>
+
+  <!-- Cytoscape für Netzwerk-Graph -->
+  <script src="https://unpkg.com/cytoscape@3.30.0/dist/cytoscape.min.js"></script>
+  <!-- Supabase JS SDK -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>

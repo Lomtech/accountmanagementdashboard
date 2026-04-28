@@ -1,0 +1,17 @@
+# Netlify config — kein Build-Step, statisch
+[build]
+  publish = "."
+
+# SPA-Fallback fuer Hash-Routing nicht notwendig (alle Routes laufen ueber #...)
+# Aber falls du auf path-routing umstellst, hier aktivieren:
+# [[redirects]]
+#   from = "/*"
+#   to   = "/index.html"
+#   status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
