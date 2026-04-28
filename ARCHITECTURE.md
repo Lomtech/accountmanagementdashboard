@@ -4,6 +4,40 @@ End-to-end Architektur des x1F Lead-Generation-Systems. Erklärt, wie Daten von 
 
 ---
 
+## 0. Signal-Framework — die 23 Trigger-Typen
+
+Ein Senior-FSI-KAM trackt systematisch diese Buying-Trigger. Jeder hat eine eigene Pitch-Logik in `v_outreach_pitches`:
+
+| # | `signal_type` | Icon | Was es signalisiert | x1F-Hebel |
+|---|---|---|---|---|
+| 1 | `job_posting` | 👤 | Skill-Gap → externe Hilfe | Beratungs-Pitch |
+| 2 | `tender` | 📋 | Aktive Procurement-Phase | Bidder/Pre-Bid |
+| 3 | `leadership_change` | 🪑 | 100-Tage-Trigger | Strategiegespräch |
+| 4 | `regulatory_deadline` | ⚖️ | Pflicht-Budget DORA/CSRD/Basel/IFRS | Reg-Reporting Add-on |
+| 5 | `ma_activity` | 🤝 | System-Konsolidierung kommt | Migration/Carve-out |
+| 6 | `restructuring` | ✂️ | Effizienz-Druck | Automatisierung |
+| 7 | `cloud_migration` | ☁️ | RISE/GROW Transformation | Migration Services |
+| 8 | `customer_reference` | ⭐ | Bestätigt SAP-Stack | Cross-Sell-Erweiterung |
+| 9 | `earnings_mention` | 💰 | CFO commits IT-Budget | Strategie-Gespräch CFO |
+| 10 | `annual_report_mention` | 📊 | "Modernisierung Kernsysteme" | Roadmap-Alignment |
+| 11 | `conference_talk` | 🎤 | Sichtbarer Decision-Maker | Direkt-Kontakt nach Talk |
+| 12 | `competitor_win` | 🏁 | Budget bei Mitbewerber | Sub-Bidder-Position |
+| 13 | `compliance_finding` | 🚨 | BaFin/MaRisk-Pressure | Schnell-Fix-Pitch |
+| 14 | `directors_dealings` | 📈 | Insider-Aktivität | Strategy-Watch |
+| 15 | `innovation_signal` | 💡 | Innovation Lab/Fintech-Invest | Plattform-Partner |
+| 16 | `office_expansion` | 🏢 | New-Market-Rollout | Multi-Site-Pitch |
+| 17 | `vendor_switch` | 🔄 | Avaloq/Temenos verlässt | SAP-Migration-Pfad |
+| 18 | `sanction_event` | ⚠️ | BaFin-Sanktion | Compliance-Remediation |
+| 19 | `aufsichtsrat_change` | 👥 | Strategie-Wechsel | Top-Down-Approach |
+| 20 | `partnership` | 🤝 | Tech-Partnerschaft | Ecosystem-Brücke |
+| 21 | `project_announcement` | 📢 | IT-Projekt angekündigt | Sofort-Kontakt |
+| 22 | `tech_stack_signal` | 🛠️ | GitHub/Patente/OSS | Architektur-Workshop |
+| 23 | `press_release` | 📰 | Allgemeine PR | Kontext für Outreach |
+
+Jeder Typ hat in `v_outreach_pitches` einen eigenen Pitch-Vorschlag (case-when-Logik). Auto-Crawler klassifiziert beim Scrapen automatisch via Keyword-Hints (`scraper/scrape.js → classifyType()`).
+
+---
+
 ## 1. High-Level Übersicht
 
 ```mermaid

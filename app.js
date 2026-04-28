@@ -79,6 +79,38 @@ const RELATIONSHIP_LABELS = {
   known_via:         "kennt über",
 };
 
+const SIGNAL_TYPE_META = {
+  job_posting:          { icon: "👤", label: "Job-Posting",      color: "#0891b2" },
+  tender:               { icon: "📋", label: "Ausschreibung",    color: "#c2410c" },
+  leadership_change:    { icon: "🪑", label: "Leadership-Wechsel", color: "#9333ea" },
+  regulatory_deadline:  { icon: "⚖️", label: "Reg-Deadline",     color: "#dc2626" },
+  ma_activity:          { icon: "🤝", label: "M&A",              color: "#0e7490" },
+  restructuring:        { icon: "✂️", label: "Restrukturierung", color: "#b45309" },
+  cloud_migration:      { icon: "☁️", label: "Cloud-Migration",  color: "#2563eb" },
+  customer_reference:   { icon: "⭐", label: "Customer-Ref",     color: "#16a34a" },
+  earnings_mention:     { icon: "💰", label: "Earnings",         color: "#65a30d" },
+  annual_report_mention:{ icon: "📊", label: "Geschäftsbericht", color: "#854d0e" },
+  conference_talk:      { icon: "🎤", label: "Conference",       color: "#0891b2" },
+  competitor_win:       { icon: "🏁", label: "Competitor-Win",   color: "#ea580c" },
+  compliance_finding:   { icon: "🚨", label: "Compliance",       color: "#dc2626" },
+  directors_dealings:   { icon: "📈", label: "Insider-Trade",    color: "#6b7280" },
+  innovation_signal:    { icon: "💡", label: "Innovation",       color: "#a855f7" },
+  office_expansion:     { icon: "🏢", label: "Expansion",        color: "#059669" },
+  vendor_switch:        { icon: "🔄", label: "Vendor-Switch",    color: "#7c3aed" },
+  sanction_event:       { icon: "⚠️", label: "Sanktion",         color: "#991b1b" },
+  aufsichtsrat_change:  { icon: "👥", label: "AR-Wechsel",       color: "#7c2d12" },
+  partnership:          { icon: "🤝", label: "Partnerschaft",    color: "#0d9488" },
+  project_announcement: { icon: "📢", label: "Projekt-Ankündigung", color: "#1e40af" },
+  tech_stack_signal:    { icon: "🛠️", label: "Tech-Stack",       color: "#475569" },
+  press_release:        { icon: "📰", label: "Pressemitteilung", color: "#525252" },
+  regulatory_action:    { icon: "⚖️", label: "Reg-Action",       color: "#dc2626" },
+};
+
+function signalBadge(type) {
+  const m = SIGNAL_TYPE_META[type] ?? { icon: "•", label: type, color: "#6b7280" };
+  return `<span class="badge" style="background:${m.color}15;color:${m.color};border-color:${m.color}40" title="${esc(type)}">${m.icon} ${esc(m.label)}</span>`;
+}
+
 // ---- Status-Indikator -------------------------------------------------------
 async function pingDb() {
   try {
@@ -629,7 +661,7 @@ function renderSignalItem(s) {
       <div class="head">
         <span class="title">${esc(s.title)}</span>
         ${heatBadge(s.x1f_relevance)}
-        <span class="badge dotted">${esc(s.signal_type)}</span>
+        ${signalBadge(s.signal_type)}
         ${EDIT_MODE ? `
           <select class="status-edit" data-signal-id="${s.id}" onchange="window._setStatus(${s.id}, this.value)">
             ${["new","queued","contacted","meeting","won","lost","ignored"].map(st =>
@@ -865,6 +897,8 @@ async function renderSignals() {
   if (error) throw error;
   const all = data ?? [];
 
+  const types = Array.from(new Set(all.map(s => s.signal_type).filter(Boolean))).sort();
+
   app.innerHTML = `
     <div class="page-header">
       <div><h1>Signal-Feed</h1><p>${all.length} Signale mit Relevance ≥ 60 — mit Pitch-Vorschlag</p></div>
@@ -874,6 +908,10 @@ async function renderSignals() {
           <option value="60">≥ 60 (alle)</option>
           <option value="70">≥ 70 (warm)</option>
           <option value="80">≥ 80 (hot)</option>
+        </select>
+        <select id="f-type">
+          <option value="">Alle Typen</option>
+          ${types.map(t => `<option value="${esc(t)}">${SIGNAL_TYPE_META[t]?.icon ?? "•"} ${esc(SIGNAL_TYPE_META[t]?.label ?? t)}</option>`).join("")}
         </select>
         <select id="f-status">
           <option value="">Alle Status</option>
@@ -888,20 +926,23 @@ async function renderSignals() {
     const q = $("#f-q").value.toLowerCase();
     const rel = parseInt($("#f-rel").value);
     const st = $("#f-status").value;
+    const tp = $("#f-type").value;
     const list = all.filter(s =>
       (s.rel ?? 0) >= rel &&
       (!st || s.outreach_status === st) &&
+      (!tp || s.signal_type === tp) &&
       (!q || (s.bank ?? "").toLowerCase().includes(q) || (s.title ?? "").toLowerCase().includes(q)));
     $("#signals-list").innerHTML = list.length === 0 ? '<div class="empty">Keine Treffer.</div>' :
       list.map(s => `
         <div class="section">
           <div class="section-header">
             <div class="gap">
-              <strong>${esc(s.bank ?? "—")}</strong>
+              <strong>${esc(s.bank ?? "Marktsignal")}</strong>
               ${s.is_x1f_customer ? '<span class="badge x1f">⭐ Bestand</span>' : ""}
-              ${segmentBadge(s.segment ?? "other")}
-              ${countryBadge(s.country ?? "")}
-              <a href="#/bank/${s.bank_id}" class="small">Bank-Detail →</a>
+              ${s.segment ? segmentBadge(s.segment) : ""}
+              ${s.country ? countryBadge(s.country) : ""}
+              ${signalBadge(s.signal_type)}
+              ${s.bank_id ? `<a href="#/bank/${s.bank_id}" class="small">Bank-Detail →</a>` : ""}
             </div>
             ${heatBadge(s.rel)}
           </div>
@@ -919,7 +960,7 @@ async function renderSignals() {
           </div>
         </div>`).join("");
   };
-  ["#f-q","#f-rel","#f-status"].forEach(s => $(s).addEventListener("input", render));
+  ["#f-q","#f-rel","#f-type","#f-status"].forEach(s => $(s).addEventListener("input", render));
   render();
 }
 

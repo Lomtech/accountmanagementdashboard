@@ -26,13 +26,45 @@ const sha   = (s) => crypto.createHash("md5").update(s).digest("hex");
 const HOT_KEYWORDS = ["SAP FPSL","SAP S/4HANA","S/4 HANA","SAP-CML","SAP TRM","SAP Banking","SAP FS-CD","Bank Analyzer","SAP Treasury"];
 const WARM_KEYWORDS = ["SAP Finance","SAP ABAP","SAP Basis","SAP CO","SAP FI","Hedge Accounting","IFRS 9","Group Reporting","Subledger"];
 
-function scoreRelevance(title, snippet) {
+// Signal-Type-Hints fuer auto-Klassifikation
+const TYPE_HINTS = {
+  tender:               ["ausschreibung","tender","vergabe","bekanntmachung","rahmenvertrag"],
+  leadership_change:    ["neuer cio","neuer cfo","neuer ceo","vorstand bestellung","bereichsvorstand","wechsel an die spitze"],
+  regulatory_deadline:  ["dora","csrd","basel iv","crr iii","anacredit","ifrs 9","ifrs 17","marisk"],
+  ma_activity:          ["übernahme","akquisition","fusion","merger","carve-out","verkauft an"],
+  restructuring:        ["stellenabbau","restrukturierung","effizienzprogramm","kostensenkung"],
+  cloud_migration:      ["rise with sap","grow with sap","s/4hana cloud","sovereign cloud"],
+  customer_reference:   ["customer story","erfolgsgeschichte","case study","referenzkunde"],
+  earnings_mention:     ["quartalszahlen","earnings call","geschäftsergebnis"],
+  annual_report_mention:["geschäftsbericht","annual report","jahresabschluss"],
+  conference_talk:      ["sprecher","speaker","keynote","konferenz","forum","ebicon","sapinsider"],
+  competitor_win:       ["kpmg","deloitte","pwc","ey","capgemini","accenture","reply","msg"],
+  compliance_finding:   ["bafin beanstandung","marisk findings","aufsicht beanstandet"],
+  innovation_signal:    ["innovation lab","fintech investment","beteiligung"],
+  vendor_switch:        ["avaloq","temenos","kernbankensystem wechsel"],
+  press_release:        ["pressemitteilung","press release"],
+};
+
+function classifyType(title, snippet) {
+  const text = (title + " " + (snippet ?? "")).toLowerCase();
+  for (const [type, hints] of Object.entries(TYPE_HINTS)) {
+    if (hints.some(h => text.includes(h))) return type;
+  }
+  return "job_posting";  // Default für SAP+Bank-Treffer
+}
+
+function scoreRelevance(title, snippet, type) {
   const text = (title + " " + (snippet ?? "")).toLowerCase();
   let score = 0;
   for (const k of HOT_KEYWORDS)  if (text.includes(k.toLowerCase())) score += 30;
   for (const k of WARM_KEYWORDS) if (text.includes(k.toLowerCase())) score += 15;
-  if (text.includes("ausschreibung") || text.includes("tender")) score += 25;
-  if (text.includes("vorstand") || text.includes("ceo wechsel")) score += 20;
+  // Type-Boni
+  if (type === "tender")              score += 25;
+  if (type === "leadership_change")   score += 20;
+  if (type === "regulatory_deadline") score += 20;
+  if (type === "customer_reference")  score += 25;
+  if (type === "ma_activity")         score += 20;
+  if (type === "restructuring")       score += 15;
   return Math.min(100, score || 30);
 }
 
@@ -65,18 +97,21 @@ async function searchOne(page, bank, query) {
     })).filter(j => j.title.length > 5));
   }
 
-  return jobs.slice(0, 10).map(j => ({
-    bank_name_raw: bank,
-    signal_type: "job_posting",
-    title: j.title,
-    body: j.snippet,
-    source: "google_search",
-    source_url: j.url ?? url,
-    signal_date: new Date().toISOString().slice(0, 10),
-    keywords_matched: extractKeywords(j.title + " " + j.snippet),
-    x1f_relevance: scoreRelevance(j.title, j.snippet),
-    raw_hash: sha(`${bank}::${j.title}::${j.url ?? url}`),
-  }));
+  return jobs.slice(0, 10).map(j => {
+    const type = classifyType(j.title, j.snippet);
+    return {
+      bank_name_raw: bank,
+      signal_type: type,
+      title: j.title,
+      body: j.snippet,
+      source: "google_search",
+      source_url: j.url ?? url,
+      signal_date: new Date().toISOString().slice(0, 10),
+      keywords_matched: extractKeywords(j.title + " " + j.snippet),
+      x1f_relevance: scoreRelevance(j.title, j.snippet, type),
+      raw_hash: sha(`${bank}::${j.title}::${j.url ?? url}`),
+    };
+  });
 }
 
 async function postIngest(signals) {

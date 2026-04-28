@@ -1,0 +1,141 @@
+{
+  "_comment": "Erweiterte Signal-Quellen für den Crawler. Pro Trigger-Typ Suchqueries und welche Quellen befüllt werden. Der scraper kann jeden Block durchgehen.",
+
+  "job_posting": {
+    "description": "SAP-Stellen bei Banken — direkter Skill-Gap-Indikator",
+    "queries": [
+      "{bank} SAP stellenangebot 2026",
+      "{bank} S/4HANA stelle 2026",
+      "{bank} SAP FPSL OR FS-CD OR TRM 2026"
+    ]
+  },
+
+  "tender": {
+    "description": "Öffentliche Ausschreibungen (TED + DTVP + evergabe)",
+    "queries": [
+      "site:ted.europa.eu {bank} SAP",
+      "site:dtvp.de {bank} SAP",
+      "site:evergabe-online.de {bank} SAP"
+    ]
+  },
+
+  "leadership_change": {
+    "description": "CIO/CFO/CEO-Wechsel — 100-Tage-Trigger",
+    "queries": [
+      "{bank} neuer CIO OR CFO OR CEO 2026",
+      "{bank} Vorstand Bestellung 2026",
+      "{bank} Bereichsvorstand IT 2026"
+    ]
+  },
+
+  "regulatory_deadline": {
+    "description": "Pflicht-Budget durch DORA/CSRD/Basel/AnaCredit",
+    "queries": [
+      "{bank} DORA Implementation 2026",
+      "{bank} CSRD Berichtspflicht",
+      "{bank} Basel IV CRR III Reporting"
+    ]
+  },
+
+  "ma_activity": {
+    "description": "M&A / Carve-out — System-Konsolidierung kommt",
+    "queries": [
+      "{bank} Übernahme OR Akquisition 2026",
+      "{bank} Carve-out OR Verkauf",
+      "{bank} Fusion 2026"
+    ]
+  },
+
+  "restructuring": {
+    "description": "Stellenabbau / Effizienz — Automatisierungs-Hebel",
+    "queries": [
+      "{bank} Stellenabbau 2026",
+      "{bank} Restrukturierung Effizienz",
+      "{bank} Kostensenkungsprogramm"
+    ]
+  },
+
+  "cloud_migration": {
+    "description": "RISE/GROW/Cloud-Migration — aktive Transformation",
+    "queries": [
+      "{bank} RISE with SAP",
+      "{bank} S/4HANA Cloud Migration",
+      "{bank} GROW with SAP"
+    ]
+  },
+
+  "customer_reference": {
+    "description": "SAP-Customer-Stories — Bestätigt Stack",
+    "queries": [
+      "site:sap.com customer {bank}",
+      "{bank} SAP Erfolgsgeschichte"
+    ]
+  },
+
+  "earnings_mention": {
+    "description": "Earnings-Call-Mentions zu IT-Investments",
+    "queries": [
+      "{bank} Quartalsbericht 2026 IT-Investment",
+      "{bank} earnings call IT modernization"
+    ]
+  },
+
+  "annual_report_mention": {
+    "description": "Geschäftsbericht-Mentions Modernisierung Kernsysteme",
+    "queries": [
+      "{bank} Geschäftsbericht 2025 Modernisierung",
+      "{bank} Annual Report SAP Transformation"
+    ]
+  },
+
+  "conference_talk": {
+    "description": "Sprecher-Listen Banking/SAP-Konferenzen",
+    "queries": [
+      "{bank} SAP for Banking Forum Sprecher",
+      "{bank} EBICON OR SAPinsider 2026 speaker",
+      "{bank} Bankenkongress 2026"
+    ]
+  },
+
+  "competitor_win": {
+    "description": "KPMG/Deloitte/PwC/Reply Customer-Wins",
+    "queries": [
+      "KPMG OR Deloitte OR PwC OR Reply {bank} SAP Projekt",
+      "Capgemini Accenture {bank} S/4HANA"
+    ]
+  },
+
+  "compliance_finding": {
+    "description": "BaFin-Beanstandungen / MaRisk-Findings",
+    "queries": [
+      "site:bafin.de {bank}",
+      "{bank} BaFin Beanstandung Sanktion 2026",
+      "{bank} MaRisk Findings"
+    ]
+  },
+
+  "innovation_signal": {
+    "description": "Innovation Lab / Fintech-Investments",
+    "queries": [
+      "{bank} Innovation Lab 2026",
+      "{bank} Fintech Investment Beteiligung"
+    ]
+  },
+
+  "vendor_switch": {
+    "description": "Wechsel von Avaloq/Temenos/anderen Core-Banking-Systemen",
+    "queries": [
+      "{bank} Avaloq verlässt OR ablöst",
+      "{bank} Temenos Migration",
+      "{bank} Kernbankensystem Wechsel"
+    ]
+  },
+
+  "press_release": {
+    "description": "Allgemeine Pressemeldungen zu IT-Projekten",
+    "queries": [
+      "site:presseportal.de {bank} SAP S/4HANA",
+      "{bank} Pressemitteilung Transformation IT"
+    ]
+  }
+}
