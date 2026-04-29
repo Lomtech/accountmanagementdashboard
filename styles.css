@@ -57,7 +57,10 @@
   --shadow-lg:    0 8px 24px rgba(0,0,0,.6), 0 32px 64px rgba(0,0,0,.4);
 }
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; }
+h1, h2, h3, h4, h5, h6 { margin: 0; }
+p { margin: 0; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
 
 html, body {
   background: var(--bg);
