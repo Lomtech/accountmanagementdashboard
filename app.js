@@ -514,7 +514,7 @@ async function renderLeads() {
           <option value="name">Sort: Name</option>
         </select>
         <button id="export-csv" title="CSV exportieren">⬇ CSV</button>
-        ${EDIT_MODE ? `<button class="primary" onclick="window._createBank()">+ Bank anlegen</button>` : ""}
+        ${EDIT_MODE ? `<button class="primary" onclick="window._createBank()">+ Lead anlegen</button>` : ""}
       </div>
     </div>
     <div class="section">
@@ -1389,7 +1389,7 @@ function drawDetailGraph(allContacts, conns) {
 function editContactModal(id, c, bankId, banksList = null) {
   c = c ?? { bank_id: bankId, full_name: "", role_title: "", seniority: "Unbekannt", functional_area: "", influence_score: 50, relationship_score: 0, is_placeholder: false, linkedin_url: "", email: "", previous_employer: "", source_url: "" };
   const bankSelect = (!id && banksList)
-    ? `<label>Bank *<select id="m-bank"><option value="">— Bank wählen —</option>${banksList.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join("")}</select></label>`
+    ? `<label>Bank / Unternehmen <span class="muted small">(optional)</span><select id="m-bank"><option value="">— kein Unternehmen —</option>${banksList.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join("")}</select></label>`
     : "";
   const html = `
     <div class="modal-backdrop" id="modal">
@@ -1432,8 +1432,7 @@ function editContactModal(id, c, bankId, banksList = null) {
     </div>`;
   document.body.insertAdjacentHTML("beforeend", html);
   $("#m-save").onclick = async () => {
-    const resolvedBankId = banksList ? parseInt($("#m-bank")?.value ?? "0") : (bankId ?? c.bank_id);
-    if (!resolvedBankId) { showToast("Bitte eine Bank auswählen", "error"); return; }
+    const resolvedBankId = banksList ? (parseInt($("#m-bank")?.value ?? "0") || null) : (bankId ?? c.bank_id ?? null);
     const payload = {
       bank_id: resolvedBankId,
       full_name: $("#m-name").value.trim(),
@@ -1543,7 +1542,7 @@ function createBankModal() {
   const html = `
     <div class="modal-backdrop" id="modal">
       <div class="modal" style="max-width:520px">
-        <h3>+ Neue Bank / Neuen Lead anlegen</h3>
+        <h3>+ Neuen Lead anlegen</h3>
         <div class="form-grid">
           <label>Name der Bank *<input id="nb-name" placeholder="z.B. Musterbank AG" autofocus></label>
           <label>Segment
@@ -1793,17 +1792,28 @@ async function renderContacts() {
 //   PAGE: Network
 // ===========================================================================
 // --- Network: functional-area → color mapping ----------------------------
-function funcAreaColor(area) {
+const FUNC_COLORS = {
+  management: { base: "#f97316", light: "#fff7ed", dark: "#7c2d12" },
+  treasury:   { base: "#eab308", light: "#fefce8", dark: "#713f12" },
+  it:         { base: "#3b82f6", light: "#eff6ff", dark: "#1e3a8a" },
+  risk:       { base: "#ef4444", light: "#fef2f2", dark: "#7f1d1d" },
+  operations: { base: "#8b5cf6", light: "#f5f3ff", dark: "#4c1d95" },
+  sales:      { base: "#10b981", light: "#ecfdf5", dark: "#064e3b" },
+  hr:         { base: "#ec4899", light: "#fdf2f8", dark: "#831843" },
+  other:      { base: "#64748b", light: "#f8fafc", dark: "#1e293b" },
+};
+function funcAreaKey(area) {
   const a = (area ?? "").toLowerCase();
-  if (/treasury|finanzen|finance|cfo|investment|wertpapier|kapitalmarkt/.test(a)) return "#d97706"; // gold
-  if (/\bit\b|technolog|digital|cio|cto|informatik|data|cyber|infrastruktur/.test(a)) return "#2563eb"; // blue
-  if (/risk|compliance|cro|recht|revision|regulat/.test(a)) return "#dc2626"; // red
-  if (/operations|coo|prozess|betrieb/.test(a)) return "#7c3aed"; // purple
-  if (/geschäftsführung|ceo|vorstand|management/.test(a)) return "#ea580c"; // orange
-  if (/sales|vertrieb|kundenbetreuung/.test(a)) return "#16a34a"; // green
-  if (/hr|personal|people/.test(a)) return "#db2777"; // pink
-  return "#64748b"; // slate
+  if (/treasury|finanzen|finance|cfo|investment|wertpapier|kapitalmarkt/.test(a)) return "treasury";
+  if (/\bit\b|technolog|digital|cio|cto|informatik|data|cyber|infrastruktur/.test(a)) return "it";
+  if (/risk|compliance|cro|recht|revision|regulat/.test(a)) return "risk";
+  if (/operations|coo|prozess|betrieb/.test(a)) return "operations";
+  if (/geschäftsführung|ceo|vorstand|management/.test(a)) return "management";
+  if (/sales|vertrieb|kundenbetreuung/.test(a)) return "sales";
+  if (/hr|personal|people/.test(a)) return "hr";
+  return "other";
 }
+function funcAreaColor(area) { return FUNC_COLORS[funcAreaKey(area)]?.base ?? "#64748b"; }
 
 let _cyInst = null; // global cy instance for zoom controls
 
@@ -1818,86 +1828,101 @@ async function renderNetwork() {
   const nodes = nodesRes.data ?? [];
   const edges = edgesRes.data ?? [];
 
-  const bankList = Array.from(new Set(nodes.map(n => n.bank))).sort();
+  const bankList = Array.from(new Set(nodes.map(n => n.bank).filter(Boolean))).sort();
+
+  const FUNC_CHIPS = [
+    { key: "",           label: "Alle",      icon: "" },
+    { key: "management", label: "Management",icon: "🏢" },
+    { key: "treasury",   label: "Finance",   icon: "💰" },
+    { key: "it",         label: "IT",        icon: "💻" },
+    { key: "risk",       label: "Risk",      icon: "⚠" },
+    { key: "operations", label: "Operations",icon: "⚙" },
+    { key: "sales",      label: "Sales",     icon: "🤝" },
+  ];
 
   app.innerHTML = `
     <div class="net-layout">
       <div class="net-main">
-        <div class="net-toolbar">
-          <div class="net-toolbar-left">
-            <h1 style="margin:0;font-size:18px">Netzwerk</h1>
-            <span class="small muted">${nodes.length} Personen · ${edges.length} Verbindungen</span>
+        <div class="net-header-card">
+          <div class="net-header-top">
+            <div>
+              <h1 class="net-title">Netzwerk & Verflechtungen</h1>
+              <p class="net-subtitle">${nodes.length} Personen · ${edges.length} Verbindungen · Knoten anklicken für Details</p>
+            </div>
+            <div class="cy-zoom-controls">
+              <button id="cy-zoom-in" title="Zoom rein">+</button>
+              <button id="cy-zoom-out" title="Zoom raus">−</button>
+              <button id="cy-fit" title="Alle einpassen">Fit</button>
+            </div>
           </div>
-          <div class="net-toolbar-filters">
-            <input type="text" id="f-search" placeholder="🔍 Person / Rolle suchen…" class="net-search">
-            <select id="f-funcarea">
-              <option value="">Alle Funktionen</option>
-              <option value="treasury">💰 Treasury / Finance</option>
-              <option value="it">💻 IT / Technologie</option>
-              <option value="risk">⚠️ Risk / Compliance</option>
-              <option value="management">🏢 Management</option>
-              <option value="operations">⚙️ Operations</option>
-              <option value="sales">🤝 Sales / Vertrieb</option>
-            </select>
-            <select id="f-bankfilter">
-              <option value="">Alle Banken</option>
+
+          <div class="net-search-row">
+            <div class="net-search-wrap">
+              <svg class="net-search-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m14 14 3 3"/></svg>
+              <input type="text" id="f-search" placeholder="Person, Rolle oder Bank suchen…" class="net-search">
+            </div>
+            <select id="f-bankfilter" class="net-select">
+              <option value="">Alle Banken / Unternehmen</option>
               ${bankList.map(b => `<option>${esc(b)}</option>`).join("")}
             </select>
-            <select id="f-relfilter">
-              <option value="">Alle Beziehungen</option>
-              ${Object.keys(RELATIONSHIP_LABELS).map(k => `<option>${k}</option>`).join("")}
+            <select id="f-relfilter" class="net-select">
+              <option value="">Alle Beziehungstypen</option>
+              ${Object.keys(RELATIONSHIP_LABELS).map(k => `<option value="${k}">${RELATIONSHIP_LABELS[k]}</option>`).join("")}
             </select>
-            <label class="small"><input type="checkbox" id="f-real"> Nur reale</label>
+            <label class="net-toggle"><input type="checkbox" id="f-real"><span class="net-toggle-track"></span><span class="net-toggle-label">Nur verifiziert</span></label>
           </div>
-          <div class="cy-zoom-controls">
-            <button id="cy-zoom-in" title="Zoom +">+</button>
-            <button id="cy-zoom-out" title="Zoom −">−</button>
-            <button id="cy-fit" title="Alle einpassen">⊡ Fit</button>
+
+          <div class="net-chips-row">
+            ${FUNC_CHIPS.map(c => `<button class="net-chip${c.key === "" ? " active" : ""}" data-area="${c.key}" style="${c.key ? `--chip-color:${FUNC_COLORS[c.key]?.base}` : ""}">${c.icon ? c.icon + " " : ""}${c.label}</button>`).join("")}
+            <div class="net-chips-legend">
+              <span>Größe = Einfluss</span>
+              <span>★ = Entscheider</span>
+              <span>Goldrand = Vorstand</span>
+            </div>
           </div>
-        </div>
-        <div class="net-legend">
-          <strong style="font-size:11px;color:var(--text-muted)">Farbe = Funktion:</strong>
-          <span><span class="swatch" style="background:#ea580c"></span>Management/CEO</span>
-          <span><span class="swatch" style="background:#d97706"></span>Treasury/Finance</span>
-          <span><span class="swatch" style="background:#2563eb"></span>IT/Technologie</span>
-          <span><span class="swatch" style="background:#dc2626"></span>Risk/Compliance</span>
-          <span><span class="swatch" style="background:#7c3aed"></span>Operations</span>
-          <span><span class="swatch" style="background:#16a34a"></span>Sales/Vertrieb</span>
-          <span><span class="swatch" style="background:#64748b"></span>Sonstige</span>
-          <span style="margin-left:12px;border-left:1px solid var(--border);padding-left:12px">
-            <strong style="font-size:11px;color:var(--text-muted)">Größe = Einfluss · Rand = Vorstand</strong>
-          </span>
         </div>
         <div id="cy"></div>
       </div>
       <div class="net-sidebar" id="cy-sidebar">
         <div class="net-sidebar-empty">
-          <p>👈 Knoten anklicken für Profil-Details</p>
-          <p class="small muted">Drag zum Bewegen · Scroll zum Zoomen</p>
+          <div class="net-sidebar-icon">⬡</div>
+          <p>Knoten anklicken</p>
+          <p class="small muted">Profil, Einfluss-Score und Verbindungen werden hier angezeigt</p>
+          <p class="small muted" style="margin-top:16px">Scroll = Zoomen<br>Drag = Bewegen</p>
         </div>
       </div>
     </div>`;
 
-  const FUNC_AREA_KEYWORDS = {
+  const FUNC_AREA_PATTERNS = {
     treasury: /treasury|finanzen|finance|cfo|investment|wertpapier|kapitalmarkt/,
     it: /\bit\b|technolog|digital|cio|cto|informatik|data|cyber|infrastruktur/,
     risk: /risk|compliance|cro|recht|revision|regulat/,
     management: /geschäftsführung|ceo|vorstand|management/,
     operations: /operations|coo|prozess|betrieb/,
     sales: /sales|vertrieb|kundenbetreuung/,
+    hr: /hr|personal|people/,
   };
 
   const matchesFuncArea = (node, area) => {
     if (!area) return true;
     const haystack = ((node.functional_area ?? "") + " " + (node.role_title ?? "")).toLowerCase();
-    return FUNC_AREA_KEYWORDS[area]?.test(haystack) ?? true;
+    const pat = FUNC_AREA_PATTERNS[area];
+    return pat ? pat.test(haystack) : funcAreaKey((node.functional_area ?? "") + " " + (node.role_title ?? "")) === area;
   };
+
+  let _activeArea = "";
+  $$(".net-chip").forEach(btn => btn.addEventListener("click", () => {
+    $$(".net-chip").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    _activeArea = btn.dataset.area ?? "";
+    render();
+  }));
 
   const filterNodes = () => {
     const bank     = $("#f-bankfilter").value;
     const rel      = $("#f-relfilter").value;
     const realOnly = $("#f-real").checked;
-    const area     = $("#f-funcarea").value;
+    const area     = _activeArea;
     let n = nodes;
     if (bank) n = n.filter(x => x.bank === bank);
     if (realOnly) n = n.filter(x => !x.is_placeholder);
@@ -1925,8 +1950,10 @@ async function renderNetwork() {
   };
 
   const showNodeProfile = (d) => {
-    const funcColor = funcAreaColor(d.functional_area ?? d.role_title ?? "");
-    const decisionBadge = d.is_decision_maker ? `<span class="badge" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">⭐ Entscheider</span>` : "";
+    const fkey = funcAreaKey((d.functional_area ?? "") + " " + (d.role_title ?? ""));
+    const fc = FUNC_COLORS[fkey] ?? FUNC_COLORS.other;
+    const funcColor = fc.base;
+    const decisionBadge = d.is_decision_maker ? `<span class="net-badge net-badge-star">⭐ Entscheider</span>` : "";
     const linkedIn = d.linkedin_url ? `<a href="${esc(d.linkedin_url)}" target="_blank" class="btn btn-sm" style="margin-top:8px">LinkedIn →</a>` : "";
     $("#cy-sidebar").innerHTML = `
       <div class="net-profile">
@@ -1934,12 +1961,12 @@ async function renderNetwork() {
         <div class="net-profile-body">
           <div style="font-size:18px;font-weight:700;line-height:1.2">${esc(d.displayLabel)}</div>
           <div class="small muted" style="margin:4px 0 8px">${esc(d.role_title ?? "—")}</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+          <div class="net-profile-chips">
             ${decisionBadge}
-            <span class="badge">${esc(d.seniority ?? "—")}</span>
-            <span class="badge" style="background:${funcColor}22;color:${funcColor};border-color:${funcColor}44">${esc(d.functional_area ?? "—")}</span>
+            <span class="net-badge">${esc(d.seniority ?? "Unbekannt")}</span>
+            <span class="net-badge" style="background:${funcColor}18;color:${funcColor};border-color:${funcColor}30">${esc(d.functional_area ?? "—")}</span>
           </div>
-          <div class="net-profile-row"><span class="muted">Bank</span><a href="#/bank/${d.bank_id}">${esc(d.bank ?? "—")}</a></div>
+          <div class="net-profile-row"><span class="muted">Unternehmen</span>${d.bank_id ? `<a href="#/bank/${d.bank_id}">${esc(d.bank ?? "—")}</a>` : `<span>${esc(d.bank ?? "—")}</span>`}</div>
           <div class="net-profile-row"><span class="muted">Einfluss</span><div style="display:flex;align-items:center;gap:8px"><div class="mini-bar"><div class="mini-bar-fill" style="width:${d.influence_score ?? 0}%;background:${funcColor}"></div></div><span>${d.influence_score ?? "—"}</span></div></div>
           ${d.email ? `<div class="net-profile-row"><span class="muted">E-Mail</span><a href="mailto:${esc(d.email)}">${esc(d.email)}</a></div>` : ""}
           ${d.alma_mater ? `<div class="net-profile-row"><span class="muted">Alma Mater</span>${esc(d.alma_mater)}</div>` : ""}
@@ -1977,14 +2004,31 @@ async function renderNetwork() {
     _cyInst.on("tap", "node", (evt) => showNodeProfile(evt.target.data()));
     _cyInst.on("tap", "edge", (evt) => {
       const d = evt.target.data();
-      $("#cy-sidebar").innerHTML = `<div class="net-profile"><div class="net-profile-body"><div style="font-weight:700;margin-bottom:8px">Verbindung</div><div class="net-profile-row"><span class="muted">Typ</span>${esc(RELATIONSHIP_LABELS[d.relationship] ?? d.relationship)}</div><div class="net-profile-row"><span class="muted">Stärke</span>${d.strength ?? "—"}</div><div class="net-profile-row"><span class="muted">Evidenz</span>${esc(d.evidence ?? "—")}</div></div></div>`;
+      const srcNode = nodes.find(n => n.id === d.source);
+      const tgtNode = nodes.find(n => n.id === d.target);
+      $("#cy-sidebar").innerHTML = `
+        <div class="net-profile">
+          <div class="net-profile-color-bar" style="background:linear-gradient(90deg,${funcAreaColor((srcNode?.functional_area ?? "")+" "+(srcNode?.role_title ?? ""))},${funcAreaColor((tgtNode?.functional_area ?? "")+" "+(tgtNode?.role_title ?? ""))})"></div>
+          <div class="net-profile-body">
+            <div class="net-conn-header">
+              <span>${esc(shortLabel(srcNode?.label ?? "?"))}</span>
+              <span class="net-conn-arrow">↔</span>
+              <span>${esc(shortLabel(tgtNode?.label ?? "?"))}</span>
+            </div>
+            <div class="net-profile-row"><span class="muted">Beziehung</span><strong>${esc(RELATIONSHIP_LABELS[d.relationship] ?? d.relationship)}</strong></div>
+            <div class="net-profile-row"><span class="muted">Stärke</span>
+              <div style="display:flex;align-items:center;gap:8px;flex:1"><div class="mini-bar"><div class="mini-bar-fill" style="width:${d.strength ?? 50}%;background:#64748b"></div></div><span>${d.strength ?? "—"}</span></div>
+            </div>
+            ${d.evidence ? `<div class="net-profile-row"><span class="muted">Evidenz</span><span class="small">${esc(d.evidence)}</span></div>` : ""}
+          </div>
+        </div>`;
     });
     // re-apply search highlight after re-render
     const q = $("#f-search")?.value ?? "";
     if (q) searchNodes(_cyInst, q);
   };
 
-  ["#f-relfilter","#f-bankfilter","#f-real","#f-funcarea"].forEach(s =>
+  ["#f-relfilter","#f-bankfilter","#f-real"].forEach(s =>
     $(s)?.addEventListener("change", render)
   );
   let _searchTimer;
