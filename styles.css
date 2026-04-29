@@ -357,26 +357,97 @@ table tbody tr.row-link { cursor: pointer; }
 }
 
 /* ============= Network ============= */
+.net-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 12px;
+  height: calc(100vh - 120px);
+  min-height: 600px;
+}
+.net-main { display: flex; flex-direction: column; gap: 0; overflow: hidden; }
+.net-toolbar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.net-toolbar-left { display: flex; align-items: baseline; gap: 10px; flex-shrink: 0; }
+.net-toolbar-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; }
+.net-search {
+  padding: 5px 10px; border: 1px solid var(--border);
+  border-radius: var(--radius); background: var(--surface-2);
+  color: var(--text); font-size: 13px;
+  width: 200px;
+}
+.net-search:focus { outline: none; border-color: var(--accent); }
+.net-legend {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  padding: 6px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.net-legend .swatch {
+  display: inline-block; width: 10px; height: 10px;
+  border-radius: 50%; margin-right: 3px; vertical-align: middle;
+}
+.cy-zoom-controls {
+  display: flex; gap: 4px; flex-shrink: 0;
+}
+.cy-zoom-controls button {
+  width: 30px; height: 30px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--surface-2); color: var(--text);
+  cursor: pointer; font-size: 14px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+.cy-zoom-controls button:hover { background: var(--surface); border-color: var(--accent); color: var(--accent); }
 #cy {
-  width: 100%;
-  height: calc(100vh - 240px);
-  min-height: 500px;
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+/* Sidebar */
+.net-sidebar {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  overflow-y: auto;
 }
-.legend {
-  display: flex; gap: 16px; flex-wrap: wrap;
-  padding: 8px 0;
-  font-size: 12px;
-  color: var(--text-muted);
+.net-sidebar-empty {
+  padding: 32px 16px; text-align: center; color: var(--text-muted); font-size: 13px;
 }
+.net-profile { display: flex; flex-direction: column; height: 100%; }
+.net-profile-color-bar { height: 4px; flex-shrink: 0; border-radius: var(--radius) var(--radius) 0 0; }
+.net-profile-body { padding: 16px; flex: 1; }
+.net-profile-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 8px; padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.net-profile-row .muted { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+.mini-bar {
+  flex: 1; height: 6px; background: var(--border);
+  border-radius: 3px; overflow: hidden;
+}
+.mini-bar-fill { height: 100%; border-radius: 3px; }
+/* Legacy */
+.legend { display: flex; gap: 16px; flex-wrap: wrap; padding: 8px 0; font-size: 12px; color: var(--text-muted); }
 .legend .swatch {
-  display: inline-block;
-  width: 12px; height: 12px;
-  border-radius: 50%;
-  margin-right: 4px;
-  vertical-align: middle;
+  display: inline-block; width: 12px; height: 12px;
+  border-radius: 50%; margin-right: 4px; vertical-align: middle;
+}
+/* Responsive */
+@media (max-width: 900px) {
+  .net-layout { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .net-sidebar { max-height: 280px; }
+  .net-search { width: 140px; }
 }
 
 /* ============= Helpers ============= */
@@ -650,7 +721,9 @@ body.edit-mode .kanban-card:active { cursor: grabbing; }
   table { font-size: 12px; }
   table thead th, table tbody td { padding: 6px 8px; }
   .kanban { grid-template-columns: 1fr; }
-  #cy { height: 60vh; }
+  #cy { height: 50vh; }
+  .net-layout { grid-template-columns: 1fr; height: auto; }
+  .net-sidebar { max-height: 260px; }
   .modal { min-width: auto; padding: 16px; }
 }
 

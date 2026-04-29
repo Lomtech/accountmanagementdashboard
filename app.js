@@ -1691,6 +1691,21 @@ async function renderContacts() {
 // ===========================================================================
 //   PAGE: Network
 // ===========================================================================
+// --- Network: functional-area → color mapping ----------------------------
+function funcAreaColor(area) {
+  const a = (area ?? "").toLowerCase();
+  if (/treasury|finanzen|finance|cfo|investment|wertpapier|kapitalmarkt/.test(a)) return "#d97706"; // gold
+  if (/\bit\b|technolog|digital|cio|cto|informatik|data|cyber|infrastruktur/.test(a)) return "#2563eb"; // blue
+  if (/risk|compliance|cro|recht|revision|regulat/.test(a)) return "#dc2626"; // red
+  if (/operations|coo|prozess|betrieb/.test(a)) return "#7c3aed"; // purple
+  if (/geschäftsführung|ceo|vorstand|management/.test(a)) return "#ea580c"; // orange
+  if (/sales|vertrieb|kundenbetreuung/.test(a)) return "#16a34a"; // green
+  if (/hr|personal|people/.test(a)) return "#db2777"; // pink
+  return "#64748b"; // slate
+}
+
+let _cyInst = null; // global cy instance for zoom controls
+
 async function renderNetwork() {
   app.innerHTML = `<div class="loading">Lade Netzwerk…</div>`;
   const [nodesRes, edgesRes] = await Promise.all([
@@ -1702,91 +1717,231 @@ async function renderNetwork() {
   const nodes = nodesRes.data ?? [];
   const edges = edgesRes.data ?? [];
 
-  app.innerHTML = `
-    <div class="page-header">
-      <div>
-        <h1>Netzwerk</h1>
-        <p>${nodes.length} Personen · ${edges.length} Verbindungen — Klick auf Knoten/Kante zeigt Details. Drag = bewegen, Scroll = zoom.</p>
-      </div>
-      <div class="filters">
-        <select id="f-relfilter"><option value="">Alle Beziehungen</option>${Object.keys(RELATIONSHIP_LABELS).map(k => `<option>${k}</option>`).join("")}</select>
-        <select id="f-bankfilter"><option value="">Alle Banken</option>${Array.from(new Set(nodes.map(n => n.bank))).sort().map(b => `<option>${esc(b)}</option>`).join("")}</select>
-        <label class="small"><input type="checkbox" id="f-real"> nur reale Personen</label>
-      </div>
-    </div>
-    <div class="legend">
-      <span><span class="swatch" style="background:#c2410c"></span>Vorstand</span>
-      <span><span class="swatch" style="background:#f59e0b"></span>Bereichsleiter</span>
-      <span><span class="swatch" style="background:#3b82f6"></span>Senior</span>
-      <span><span class="swatch" style="background:#9ca3af"></span>Sonstige</span>
-    </div>
-    <div id="cy"></div>
-    <div id="cy-info" class="small muted" style="padding:8px 0">Klicke auf einen Knoten oder eine Kante für Details.</div>`;
+  const bankList = Array.from(new Set(nodes.map(n => n.bank))).sort();
 
-  const filterEdges = (rel, bank, realOnly) => {
+  app.innerHTML = `
+    <div class="net-layout">
+      <div class="net-main">
+        <div class="net-toolbar">
+          <div class="net-toolbar-left">
+            <h1 style="margin:0;font-size:18px">Netzwerk</h1>
+            <span class="small muted">${nodes.length} Personen · ${edges.length} Verbindungen</span>
+          </div>
+          <div class="net-toolbar-filters">
+            <input type="text" id="f-search" placeholder="🔍 Person / Rolle suchen…" class="net-search">
+            <select id="f-funcarea">
+              <option value="">Alle Funktionen</option>
+              <option value="treasury">💰 Treasury / Finance</option>
+              <option value="it">💻 IT / Technologie</option>
+              <option value="risk">⚠️ Risk / Compliance</option>
+              <option value="management">🏢 Management</option>
+              <option value="operations">⚙️ Operations</option>
+              <option value="sales">🤝 Sales / Vertrieb</option>
+            </select>
+            <select id="f-bankfilter">
+              <option value="">Alle Banken</option>
+              ${bankList.map(b => `<option>${esc(b)}</option>`).join("")}
+            </select>
+            <select id="f-relfilter">
+              <option value="">Alle Beziehungen</option>
+              ${Object.keys(RELATIONSHIP_LABELS).map(k => `<option>${k}</option>`).join("")}
+            </select>
+            <label class="small"><input type="checkbox" id="f-real"> Nur reale</label>
+          </div>
+          <div class="cy-zoom-controls">
+            <button id="cy-zoom-in" title="Zoom +">+</button>
+            <button id="cy-zoom-out" title="Zoom −">−</button>
+            <button id="cy-fit" title="Alle einpassen">⊡</button>
+            <button id="cy-center" title="Zentrieren">⊙</button>
+          </div>
+        </div>
+        <div class="net-legend">
+          <strong style="font-size:11px;color:var(--text-muted)">Farbe = Funktion:</strong>
+          <span><span class="swatch" style="background:#ea580c"></span>Management/CEO</span>
+          <span><span class="swatch" style="background:#d97706"></span>Treasury/Finance</span>
+          <span><span class="swatch" style="background:#2563eb"></span>IT/Technologie</span>
+          <span><span class="swatch" style="background:#dc2626"></span>Risk/Compliance</span>
+          <span><span class="swatch" style="background:#7c3aed"></span>Operations</span>
+          <span><span class="swatch" style="background:#16a34a"></span>Sales/Vertrieb</span>
+          <span><span class="swatch" style="background:#64748b"></span>Sonstige</span>
+          <span style="margin-left:12px;border-left:1px solid var(--border);padding-left:12px">
+            <strong style="font-size:11px;color:var(--text-muted)">Größe = Einfluss · Rand = Vorstand</strong>
+          </span>
+        </div>
+        <div id="cy"></div>
+      </div>
+      <div class="net-sidebar" id="cy-sidebar">
+        <div class="net-sidebar-empty">
+          <p>👈 Knoten anklicken für Profil-Details</p>
+          <p class="small muted">Drag zum Bewegen · Scroll zum Zoomen</p>
+        </div>
+      </div>
+    </div>`;
+
+  const FUNC_AREA_KEYWORDS = {
+    treasury: /treasury|finanzen|finance|cfo|investment|wertpapier|kapitalmarkt/,
+    it: /\bit\b|technolog|digital|cio|cto|informatik|data|cyber|infrastruktur/,
+    risk: /risk|compliance|cro|recht|revision|regulat/,
+    management: /geschäftsführung|ceo|vorstand|management/,
+    operations: /operations|coo|prozess|betrieb/,
+    sales: /sales|vertrieb|kundenbetreuung/,
+  };
+
+  const matchesFuncArea = (node, area) => {
+    if (!area) return true;
+    const haystack = ((node.functional_area ?? "") + " " + (node.role_title ?? "")).toLowerCase();
+    return FUNC_AREA_KEYWORDS[area]?.test(haystack) ?? true;
+  };
+
+  const filterNodes = () => {
+    const bank     = $("#f-bankfilter").value;
+    const rel      = $("#f-relfilter").value;
+    const realOnly = $("#f-real").checked;
+    const area     = $("#f-funcarea").value;
     let n = nodes;
-    if (bank) n = nodes.filter(x => x.bank === bank);
+    if (bank) n = n.filter(x => x.bank === bank);
     if (realOnly) n = n.filter(x => !x.is_placeholder);
+    if (area) n = n.filter(x => matchesFuncArea(x, area));
     const ids = new Set(n.map(x => x.id));
     let e = edges.filter(ed => ids.has(ed.source) && ids.has(ed.target));
     if (rel) e = e.filter(ed => ed.relationship === rel);
     return { n, e };
   };
+
+  const searchNodes = (cy, q) => {
+    if (!q) { cy.elements().removeClass("cy-faded cy-highlighted"); return; }
+    const lq = q.toLowerCase();
+    const matches = cy.nodes().filter(n =>
+      (n.data("displayLabel") ?? "").toLowerCase().includes(lq) ||
+      (n.data("role_title") ?? "").toLowerCase().includes(lq) ||
+      (n.data("functional_area") ?? "").toLowerCase().includes(lq) ||
+      (n.data("bank") ?? "").toLowerCase().includes(lq)
+    );
+    cy.elements().addClass("cy-faded");
+    cy.elements().removeClass("cy-highlighted");
+    matches.removeClass("cy-faded").addClass("cy-highlighted");
+    matches.connectedEdges().removeClass("cy-faded");
+    if (matches.length > 0) cy.animate({ fit: { eles: matches, padding: 80 } }, { duration: 400 });
+  };
+
+  const showNodeProfile = (d) => {
+    const funcColor = funcAreaColor(d.functional_area ?? d.role_title ?? "");
+    const decisionBadge = d.is_decision_maker ? `<span class="badge" style="background:#fef3c7;color:#92400e;border-color:#fcd34d">⭐ Entscheider</span>` : "";
+    const linkedIn = d.linkedin_url ? `<a href="${esc(d.linkedin_url)}" target="_blank" class="btn btn-sm" style="margin-top:8px">LinkedIn →</a>` : "";
+    $("#cy-sidebar").innerHTML = `
+      <div class="net-profile">
+        <div class="net-profile-color-bar" style="background:${funcColor}"></div>
+        <div class="net-profile-body">
+          <div style="font-size:18px;font-weight:700;line-height:1.2">${esc(d.displayLabel)}</div>
+          <div class="small muted" style="margin:4px 0 8px">${esc(d.role_title ?? "—")}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+            ${decisionBadge}
+            <span class="badge">${esc(d.seniority ?? "—")}</span>
+            <span class="badge" style="background:${funcColor}22;color:${funcColor};border-color:${funcColor}44">${esc(d.functional_area ?? "—")}</span>
+          </div>
+          <div class="net-profile-row"><span class="muted">Bank</span><a href="#/bank/${d.bank_id}">${esc(d.bank ?? "—")}</a></div>
+          <div class="net-profile-row"><span class="muted">Einfluss</span><div style="display:flex;align-items:center;gap:8px"><div class="mini-bar"><div class="mini-bar-fill" style="width:${d.influence_score ?? 0}%;background:${funcColor}"></div></div><span>${d.influence_score ?? "—"}</span></div></div>
+          ${d.email ? `<div class="net-profile-row"><span class="muted">E-Mail</span><a href="mailto:${esc(d.email)}">${esc(d.email)}</a></div>` : ""}
+          ${d.alma_mater ? `<div class="net-profile-row"><span class="muted">Alma Mater</span>${esc(d.alma_mater)}</div>` : ""}
+          ${d.previous_employer ? `<div class="net-profile-row"><span class="muted">Vorher bei</span>${esc(d.previous_employer)}</div>` : ""}
+          ${linkedIn}
+          <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+            <div class="small muted" style="margin-bottom:6px">Verbindungen (${edges.filter(e => e.source === d.id || e.target === d.id).length})</div>
+            ${edges.filter(e => e.source === d.id || e.target === d.id).slice(0,5).map(e => {
+              const otherId = e.source === d.id ? e.target : e.source;
+              const other = nodes.find(n => n.id === otherId);
+              return `<div class="small" style="padding:3px 0">${RELATIONSHIP_LABELS[e.relationship] ?? e.relationship} ↔ ${esc(other?.label ?? "—")}</div>`;
+            }).join("")}
+          </div>
+        </div>
+      </div>`;
+  };
+
   const render = () => {
-    const rel = $("#f-relfilter").value, bank = $("#f-bankfilter").value, realOnly = $("#f-real").checked;
-    const { n, e } = filterEdges(rel, bank, realOnly);
-    const cy = cytoscape({
+    const { n, e } = filterNodes();
+    if (_cyInst) { _cyInst.destroy(); _cyInst = null; }
+    _cyInst = cytoscape({
       container: $("#cy"),
       elements: [
         ...n.map(x => ({ data: { ...x, displayLabel: cleanName(x.label) } })),
         ...e.map(ed => ({ data: { id: "e"+ed.id, ...ed } })),
       ],
       style: networkStyle(),
-      layout: { name: "cose", padding: 30, animate: false, nodeRepulsion: 4000, idealEdgeLength: 80 },
+      layout: {
+        name: "cose", padding: 50, animate: false,
+        nodeRepulsion: 6000, idealEdgeLength: 100,
+        gravity: 0.25, numIter: 1000,
+      },
     });
-    cy.on("tap", "node", (evt) => {
+    _cyInst.on("tap", "node", (evt) => showNodeProfile(evt.target.data()));
+    _cyInst.on("tap", "edge", (evt) => {
       const d = evt.target.data();
-      $("#cy-info").innerHTML = `<strong>${esc(d.displayLabel)}</strong> — ${esc(d.role_title ?? "")} @ <a href="#/bank/${d.bank_id}">${esc(d.bank)}</a> · Influence ${d.influence_score ?? "—"}`;
+      $("#cy-sidebar").innerHTML = `<div class="net-profile"><div class="net-profile-body"><div style="font-weight:700;margin-bottom:8px">Verbindung</div><div class="net-profile-row"><span class="muted">Typ</span>${esc(RELATIONSHIP_LABELS[d.relationship] ?? d.relationship)}</div><div class="net-profile-row"><span class="muted">Stärke</span>${d.strength ?? "—"}</div><div class="net-profile-row"><span class="muted">Evidenz</span>${esc(d.evidence ?? "—")}</div></div></div>`;
     });
-    cy.on("tap", "edge", (evt) => {
-      const d = evt.target.data();
-      $("#cy-info").innerHTML = `Verbindung: <strong>${esc(RELATIONSHIP_LABELS[d.relationship] ?? d.relationship)}</strong> · Stärke ${d.strength} · ${esc(d.evidence ?? "")}`;
-    });
+    // re-apply search highlight after re-render
+    const q = $("#f-search")?.value ?? "";
+    if (q) searchNodes(_cyInst, q);
   };
-  ["#f-relfilter","#f-bankfilter","#f-real"].forEach(s => $(s).addEventListener("change", render));
+
+  ["#f-relfilter","#f-bankfilter","#f-real","#f-funcarea"].forEach(s =>
+    $(s)?.addEventListener("change", render)
+  );
+  let _searchTimer;
+  $("#f-search")?.addEventListener("input", (ev) => {
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(() => searchNodes(_cyInst, ev.target.value), 250);
+  });
+  $("#cy-zoom-in")?.addEventListener("click",  () => _cyInst?.zoom({ level: (_cyInst.zoom() * 1.3), renderedPosition: { x: $("#cy").clientWidth/2, y: $("#cy").clientHeight/2 } }));
+  $("#cy-zoom-out")?.addEventListener("click", () => _cyInst?.zoom({ level: (_cyInst.zoom() / 1.3), renderedPosition: { x: $("#cy").clientWidth/2, y: $("#cy").clientHeight/2 } }));
+  $("#cy-fit")?.addEventListener("click",    () => _cyInst?.fit(undefined, 40));
+  $("#cy-center")?.addEventListener("click", () => _cyInst?.center());
+
   render();
 }
 
 function networkStyle() {
+  const dark = document.documentElement.dataset.theme === "dark";
+  const labelColor = dark ? "#f0f0f0" : "#1a1a1a";
   return [
     { selector: "node", style: {
-        "label": "data(displayLabel)", "font-size": 10, "color": "#1a1a1a",
-        "background-color": (ele) => {
-          const sen = ele.data("seniority");
-          if (sen === "Vorstand")        return "#c2410c";
-          if (sen === "Bereichsleiter")  return "#f59e0b";
-          if (sen === "Senior")          return "#3b82f6";
-          return "#9ca3af";
-        },
-        "text-valign": "bottom", "text-margin-y": 4, "text-wrap": "wrap", "text-max-width": "120px",
-        "width":  (ele) => 12 + (ele.data("influence_score") ?? 0) / 5,
-        "height": (ele) => 12 + (ele.data("influence_score") ?? 0) / 5,
-        "border-width": 1, "border-color": "#fff",
+        "label": "data(displayLabel)",
+        "font-size": 10,
+        "color": labelColor,
+        "text-valign": "bottom",
+        "text-margin-y": 4,
+        "text-wrap": "wrap",
+        "text-max-width": "110px",
+        "text-outline-width": 2,
+        "text-outline-color": dark ? "#242424" : "#ffffff",
+        "background-color": (ele) => funcAreaColor((ele.data("functional_area") ?? "") + " " + (ele.data("role_title") ?? "")),
+        "width":  (ele) => Math.max(16, 12 + (ele.data("influence_score") ?? 0) / 5),
+        "height": (ele) => Math.max(16, 12 + (ele.data("influence_score") ?? 0) / 5),
+        "border-width": (ele) => ele.data("seniority") === "Vorstand" ? 3 : (ele.data("is_decision_maker") ? 2 : 1),
+        "border-color": (ele) => ele.data("seniority") === "Vorstand" ? "#fbbf24" : "#ffffff",
+        "shape": (ele) => ele.data("is_decision_maker") ? "star" : "ellipse",
+      }
+    },
+    { selector: "node.cy-faded", style: { "opacity": 0.12 } },
+    { selector: "node.cy-highlighted", style: {
+        "border-width": 4, "border-color": "#fbbf24",
+        "z-index": 999,
       }
     },
     { selector: "edge", style: {
-        "width": 1.4,
+        "width": (ele) => 1 + (ele.data("strength") ?? 50) / 40,
         "line-color": (ele) => ({
-          reports_to: "#1a1a1a", alumni: "#9333ea", co_speaker: "#0891b2",
+          reports_to: "#374151", alumni: "#9333ea", co_speaker: "#0891b2",
           co_worker_current: "#16a34a", co_worker_past: "#65a30d",
           board_interlock: "#ea580c", co_author: "#0e7490",
-          referred_by: "#db2777", known_via: "#a3a3a3"
+          referred_by: "#db2777", known_via: "#9ca3af"
         })[ele.data("relationship")] ?? "#9ca3af",
         "curve-style": "bezier",
         "target-arrow-shape": (ele) => ele.data("relationship") === "reports_to" ? "triangle" : "none",
-        "target-arrow-color": "#1a1a1a", "opacity": .7,
+        "target-arrow-color": "#374151",
+        "opacity": 0.75,
       }
     },
+    { selector: "edge.cy-faded", style: { "opacity": 0.05 } },
   ];
 }
 
