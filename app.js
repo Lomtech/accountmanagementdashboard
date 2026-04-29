@@ -51,6 +51,20 @@ const segmentLabel = {
   spezialbank: "Spezialbank", auslandsbank: "Auslandsbank", asset_manager: "Asset Mgr",
   versicherer: "Versicherer", fintech: "Fintech", other: "Andere"
 };
+// Signal-Verfallszeiten in Tagen pro Typ
+const SIGNAL_TTL_DAYS = {
+  leadership_change: 90,  compliance_finding: 30,  conference_talk: 30,
+  tender: 60,             job_posting: 45,          project_announcement: 60,
+  restructuring: 90,      ma_activity: 180,         regulatory_deadline: 365,
+  sanction_event: 60,     vendor_switch: 180,       cloud_migration: 180,
+  earnings_mention: 90,   annual_report_mention: 180,
+};
+function isStale(date, type) {
+  if (!date) return false;
+  const ttl = SIGNAL_TTL_DAYS[type] ?? 120;
+  return (Date.now() - new Date(date).getTime()) / 86400000 > ttl;
+}
+
 const heatBadge = (rel) => {
   if (rel == null) return `<span class="badge cold">—</span>`;
   if (rel >= 80) return `<span class="badge hot">Hot ${rel}</span>`;
@@ -219,17 +233,19 @@ window.closeModal = () => { const m = $("#modal"); if (m) m.remove(); };
 // ===========================================================================
 async function renderBriefing() {
   app.innerHTML = `<div class="loading">Lade Briefing…</div>`;
-  const [topRes, hotRes, segRes, queueRes] = await Promise.all([
+  const [topRes, hotRes, segRes, queueRes, tasksRes] = await Promise.all([
     sb.from("v_top_leads").select("*").limit(50),
     sb.from("hot_signals").select("*"),
     sb.from("v_segment_heatmap").select("*"),
     sb.from("v_action_queue").select("*").limit(15),
+    sb.from("v_overdue_tasks").select("*").limit(20),
   ]);
   if (topRes.error)   throw topRes.error;
   if (hotRes.error)   throw hotRes.error;
   if (segRes.error)   throw segRes.error;
   if (queueRes.error) throw queueRes.error;
   const banks = topRes.data ?? [], hot = hotRes.data ?? [], segs = segRes.data ?? [], queue = queueRes.data ?? [];
+  const tasks = tasksRes.data ?? [];
   const totalSignals = banks.reduce((a,b) => a + (b.signals_90d ?? 0), 0);
   const totalBanksWithSignals = banks.length;
   const totalHot = hot.length;
@@ -295,7 +311,29 @@ async function renderBriefing() {
           </tbody>
         </table>
       </div>
-    </div>`;
+    </div>
+    ${tasks.length > 0 ? `
+    <div class="section">
+      <div class="section-header">
+        <h2>📌 Offene Tasks</h2>
+        <span class="muted small">${tasks.length} offen${tasks.filter(t => t.due_date && t.due_date < new Date().toISOString().slice(0,10)).length > 0 ? ` · <span style="color:var(--danger,#dc2626);font-weight:600">${tasks.filter(t => t.due_date && t.due_date < new Date().toISOString().slice(0,10)).length} überfällig</span>` : ""}</span>
+      </div>
+      <table>
+        <thead><tr><th>Bank</th><th>Aufgabe</th><th>Kontakt</th><th>Fällig</th><th></th></tr></thead>
+        <tbody>
+          ${tasks.map(t => {
+            const overdue = t.due_date && t.due_date < new Date().toISOString().slice(0,10);
+            return `<tr${overdue ? ' style="background:var(--danger-bg,#fef2f2)"' : ''}>
+              <td><a href="#/bank/${t.bank_id}">${esc(t.bank_name)}</a></td>
+              <td>${esc(t.title)}</td>
+              <td class="muted small">${esc(t.contact_name ?? "—")}</td>
+              <td class="small${overdue ? ' style="color:var(--danger,#dc2626);font-weight:600"' : ''}">${t.due_date ? fmtDate(t.due_date) : "—"}</td>
+              <td class="right">${EDIT_MODE ? `<button class="icon-btn" onclick="window._doneTask(${t.id})" title="Erledigt">✓</button>` : ""}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>` : ""}`;
   bindRowLinks();
 }
 
@@ -565,13 +603,14 @@ async function renderRevenue() {
 // ===========================================================================
 async function renderBankDetail(bankId) {
   app.innerHTML = `<div class="loading">Lade Bank-Detail…</div>`;
-  const [bRes, sRes, cRes, conRes, hsRes, actRes] = await Promise.all([
+  const [bRes, sRes, cRes, conRes, hsRes, actRes, tasksRes] = await Promise.all([
     sb.from("banks").select("*").eq("id", bankId).single(),
     sb.from("signals").select("*").eq("bank_id", bankId).order("x1f_relevance", { ascending: false }),
     sb.from("contacts").select("*").eq("bank_id", bankId).order("influence_score", { ascending: false, nullsFirst: false }),
     sb.from("connections").select("*"),
     sb.from("heat_score").select("heat_score").eq("bank_id", bankId).maybeSingle(),
     sb.from("bank_activity").select("*").eq("bank_id", bankId).order("created_at", { ascending: false }).limit(50),
+    sb.from("tasks").select("*").eq("bank_id", bankId).eq("status", "open").order("due_date", { ascending: true, nullsFirst: false }),
   ]);
   if (bRes.error) throw bRes.error;
   const b = bRes.data;
@@ -580,6 +619,7 @@ async function renderBankDetail(bankId) {
   const allConns = conRes.data ?? [];
   const heat = hsRes.data?.heat_score ?? 0;
   const activity = actRes.data ?? [];
+  const tasks = tasksRes.data ?? [];
 
   const myContactIds = new Set(contacts.map(c => String(c.id)));
   const relevantConns = allConns.filter(cn =>
@@ -715,6 +755,45 @@ async function renderBankDetail(bankId) {
             </dl>
           </div>
         </div>
+
+        <div class="section">
+          <div class="section-header"><h2>🛠 Tech-Profil</h2>
+            ${EDIT_MODE ? `<button class="primary small" onclick="window._editBank(${bankId})">Bearbeiten</button>` : ""}
+          </div>
+          <div style="padding:12px 16px">
+            <dl class="kv-list">
+              <dt>SAP-Module</dt><dd>${(b.sap_modules ?? []).length ? b.sap_modules.map(m => `<span class="keyword">${esc(m)}</span>`).join(" ") : "—"}</dd>
+              <dt>Cloud</dt><dd>${esc(b.cloud_provider ?? "—")}</dd>
+              <dt>Hauptpartner</dt><dd>${esc(b.main_partner ?? "—")}</dd>
+              <dt>Vertragsende</dt><dd>${esc(b.contract_end_estimate ?? "—")}</dd>
+              <dt>IT-Budget (Mio €)</dt><dd>${b.it_budget_estimate_mn != null ? fmt(b.it_budget_estimate_mn) : "—"}</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-header">
+            <h2>📌 Tasks (${tasks.length})</h2>
+            ${EDIT_MODE ? `<button class="primary small" onclick="window._addTask(${bankId})">+ Task</button>` : ""}
+          </div>
+          ${tasks.length === 0
+            ? `<div class="empty small" style="padding:12px 16px">Keine offenen Tasks.${EDIT_MODE ? " Klick auf + Task um eine Aufgabe zu erfassen." : ""}</div>`
+            : `<div style="padding:0 16px 12px">
+              ${tasks.map(t => {
+                const overdue = t.due_date && t.due_date < new Date().toISOString().slice(0,10);
+                return `<div class="activity-item" style="${overdue ? "border-left:3px solid var(--danger,#dc2626)" : "border-left:3px solid var(--border)"}">
+                  <div class="activity-meta">
+                    ${t.due_date ? `<span${overdue ? ' style="color:var(--danger,#dc2626);font-weight:600"' : ""}>${overdue ? "⚠ Überfällig: " : "Fällig: "}${fmtDate(t.due_date)}</span> · ` : ""}
+                    ${t.created_at ? fmtDate(t.created_at) : ""}
+                    ${EDIT_MODE ? `
+                      <button class="icon-btn" onclick="window._doneTask(${t.id})" title="Als erledigt markieren">✓</button>
+                      <button class="icon-btn" onclick="window._deleteTask(${t.id})" title="Löschen">🗑</button>` : ""}
+                  </div>
+                  <div class="activity-content">${esc(t.title)}${t.description ? `<div class="muted small">${esc(t.description)}</div>` : ""}</div>
+                </div>`;
+              }).join("")}
+            </div>`}
+        </div>
       </div>
     </div>`;
 
@@ -725,6 +804,16 @@ async function renderBankDetail(bankId) {
   window._addContact    = (bid) => editContactModal(null, null, bid);
   window._addConnection = (bid) => addConnectionModal(bid, contacts);
   window._editBank      = (bid) => editBankModal(b);
+  window._addTask       = (bid) => addTaskModal(bid, contacts);
+  window._doneTask      = async (id) => {
+    try { await apiCall("PATCH", `task?id=${id}`, { status: "done" }); navigate(); }
+    catch (e) { alert("Fehler: " + e.message); }
+  };
+  window._deleteTask    = async (id) => {
+    if (!confirm("Task wirklich löschen?")) return;
+    try { await apiCall("DELETE", `task?id=${id}`); navigate(); }
+    catch (e) { alert("Fehler: " + e.message); }
+  };
   window._delContact    = async (id) => {
     if (!confirm("Kontakt wirklich löschen?")) return;
     try { await apiCall("DELETE", "contact?id=" + id); navigate(); }
@@ -817,13 +906,15 @@ async function renderBankDetail(bankId) {
 
 function renderSignalItem(s) {
   const dealBadge = s.deal_value ? `<span class="badge x1f">€ ${Number(s.deal_value).toLocaleString("de-DE", {maximumFractionDigits: 0})} ${s.deal_status ?? ""}</span>` : "";
+  const staleBadge = isStale(s.signal_date, s.signal_type) ? `<span class="badge stale" title="Dieses Signal ist älter als das empfohlene Aktionsfenster">⌛ Veraltet</span>` : "";
   return `
-    <div class="signal-item">
+    <div class="signal-item${isStale(s.signal_date, s.signal_type) ? " signal-stale" : ""}">
       <div class="head">
         <span class="title">${esc(s.title)}</span>
         ${heatBadge(s.x1f_relevance)}
         ${signalBadge(s.signal_type)}
         ${dealBadge}
+        ${staleBadge}
         ${EDIT_MODE ? `
           <select class="status-edit" data-signal-id="${s.id}" onchange="window._setStatus(${s.id}, this.value)">
             ${["new","queued","contacted","meeting","won","lost","ignored"].map(st =>
@@ -914,6 +1005,8 @@ function simpleMarkdownToHtml(md) {
 
 function renderContactItem(c, editable) {
   const inf = c.influence_score ?? 0;
+  const rel = c.relationship_score ?? 0;
+  const relColor = rel >= 70 ? "var(--good)" : rel >= 40 ? "var(--warn, #f59e0b)" : "var(--muted-text)";
   const realBadge = c.is_placeholder
     ? '<span class="badge dotted small">Platzhalter</span>'
     : '<span class="badge x1f small">verifiziert</span>';
@@ -929,11 +1022,14 @@ function renderContactItem(c, editable) {
           ${c.linkedin_url ? `<a href="${esc(c.linkedin_url)}" target="_blank">LinkedIn ↗</a>` : ""}
           ${c.email ? ` · <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ""}
           ${c.source_url && !c.is_placeholder ? ` · <a href="${esc(c.source_url)}" target="_blank">Quelle ↗</a>` : ""}
+          ${c.last_contacted_at ? ` · <span class="muted">Zuletzt: ${fmtDate(c.last_contacted_at)}</span>` : ""}
         </div>
       </div>
       <div class="stat">
         <div class="influence-bar"><div class="influence-fill" style="width:${inf}%"></div></div>
-        <div class="small muted">${inf || "—"}</div>
+        <div class="small muted" title="Influence-Score">Inf: ${inf || "—"}</div>
+        <div class="influence-bar" style="margin-top:3px"><div class="influence-fill" style="width:${rel}%;background:${relColor}"></div></div>
+        <div class="small muted" title="Relationship-Score (wie gut kennen wir diese Person)">Rel: ${rel || "—"}</div>
         ${c.seniority ? `<span class="badge ${c.seniority === 'Vorstand' ? 'hot' : 'cold'}">${esc(c.seniority)}</span>` : ""}
       </div>
       ${editable ? `
@@ -992,7 +1088,7 @@ function drawDetailGraph(allContacts, conns) {
 //   EDIT MODALS
 // ===========================================================================
 function editContactModal(id, c, bankId) {
-  c = c ?? { bank_id: bankId, full_name: "", role_title: "", seniority: "Unbekannt", functional_area: "", influence_score: 50, is_placeholder: false, linkedin_url: "", email: "", previous_employer: "", source_url: "" };
+  c = c ?? { bank_id: bankId, full_name: "", role_title: "", seniority: "Unbekannt", functional_area: "", influence_score: 50, relationship_score: 0, is_placeholder: false, linkedin_url: "", email: "", previous_employer: "", source_url: "" };
   const html = `
     <div class="modal-backdrop" id="modal">
       <div class="modal" style="max-width:520px">
@@ -1007,7 +1103,18 @@ function editContactModal(id, c, bankId) {
             </select>
           </label>
           <label>Funktionsbereich<input id="m-area" value="${esc(c.functional_area ?? '')}" placeholder="z.B. IT, Finance, Treasury"></label>
-          <label>Influence-Score (0–100)<input id="m-inf" type="number" min="0" max="100" value="${c.influence_score ?? 50}"></label>
+          <label>
+            Influence-Score (0–100) — Macht/Entscheidungsgewicht
+            <input id="m-inf" type="number" min="0" max="100" value="${c.influence_score ?? 50}">
+          </label>
+          <label>
+            Relationship-Score (0–100) — wie gut kennen wir diese Person?
+            <div style="display:flex;gap:10px;align-items:center">
+              <input id="m-rel" type="range" min="0" max="100" value="${c.relationship_score ?? 0}" style="flex:1" oninput="document.getElementById('m-rel-val').textContent=this.value">
+              <span id="m-rel-val" style="width:28px;text-align:right;font-weight:600">${c.relationship_score ?? 0}</span>
+            </div>
+          </label>
+          <label>Letzter Kontakt<input id="m-lc" type="date" value="${c.last_contacted_at ?? ''}"></label>
           <label>LinkedIn-URL<input id="m-li" value="${esc(c.linkedin_url ?? '')}"></label>
           <label>E-Mail<input id="m-email" type="email" value="${esc(c.email ?? '')}"></label>
           <label>Vorheriger Arbeitgeber<input id="m-prev" value="${esc(c.previous_employer ?? '')}"></label>
@@ -1029,6 +1136,8 @@ function editContactModal(id, c, bankId) {
       seniority: $("#m-sen").value,
       functional_area: $("#m-area").value.trim() || null,
       influence_score: parseInt($("#m-inf").value),
+      relationship_score: parseInt($("#m-rel").value),
+      last_contacted_at: $("#m-lc").value || null,
       linkedin_url: $("#m-li").value.trim() || null,
       email: $("#m-email").value.trim() || null,
       previous_employer: $("#m-prev").value.trim() || null,
@@ -1042,6 +1151,44 @@ function editContactModal(id, c, bankId) {
       closeModal();
       navigate();
     } catch (e) { alert("Fehler: " + e.message); }
+  };
+}
+
+function addTaskModal(bankId, bankContacts) {
+  const html = `
+    <div class="modal-backdrop" id="modal">
+      <div class="modal" style="max-width:460px">
+        <h3>+ Neue Aufgabe</h3>
+        <div class="form-grid">
+          <label>Aufgabe (Titel)<input id="t-title" placeholder="z.B. Follow-up Call CIO" autofocus></label>
+          <label>Beschreibung<textarea id="t-desc" rows="2" placeholder="Kontext, Ziel, nächste Schritte…"></textarea></label>
+          <label>Fällig am<input id="t-due" type="date"></label>
+          ${bankContacts.length > 0 ? `<label>Kontakt (optional)
+            <select id="t-contact">
+              <option value="">— kein Kontakt —</option>
+              ${bankContacts.map(c => `<option value="${c.id}">${esc(cleanName(c.full_name))} (${esc(c.role_title ?? "")})</option>`).join("")}
+            </select>
+          </label>` : ""}
+        </div>
+        <div class="modal-actions">
+          <button onclick="closeModal()">Abbrechen</button>
+          <button class="primary" id="t-save">Speichern</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+  $("#t-save").onclick = async () => {
+    const title = $("#t-title").value.trim();
+    if (!title) return alert("Titel fehlt.");
+    const payload = {
+      bank_id: bankId,
+      title,
+      description: $("#t-desc").value.trim() || null,
+      due_date: $("#t-due").value || null,
+      contact_id: $("#t-contact")?.value ? parseInt($("#t-contact").value) : null,
+    };
+    try { await apiCall("POST", "task", payload); closeModal(); navigate(); }
+    catch (e) { alert("Fehler: " + e.message); }
   };
 }
 
@@ -1087,15 +1234,22 @@ function addConnectionModal(bankId, bankContacts) {
 }
 
 function editBankModal(b) {
+  const sapModulesStr = (b.sap_modules ?? []).join(", ");
   const html = `
     <div class="modal-backdrop" id="modal">
-      <div class="modal" style="max-width:520px">
+      <div class="modal" style="max-width:560px">
         <h3>Bank bearbeiten: ${esc(b.name)}</h3>
         <div class="form-grid">
           <label>Mitarbeiter<input id="m-emp" type="number" value="${b.employees ?? ''}"></label>
           <label>Bilanzsumme (Mrd €)<input id="m-bal" type="number" step="0.1" value="${b.total_assets_eur_bn ?? ''}"></label>
           <label class="checkbox"><input id="m-cust" type="checkbox" ${b.is_x1f_customer ? "checked" : ""}> x1F-Bestandskunde</label>
-          <label>Notizen<textarea id="m-notes" rows="4">${esc(b.notes ?? '')}</textarea></label>
+          <label>Notizen<textarea id="m-notes" rows="3">${esc(b.notes ?? '')}</textarea></label>
+          <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px;font-weight:600;font-size:12px;color:var(--muted-text);grid-column:1/-1">Tech-Profil</div>
+          <label>SAP-Module (kommagetrennt)<input id="m-sap" value="${esc(sapModulesStr)}" placeholder="z.B. S/4HANA Finance, BW/4HANA, FSCM"></label>
+          <label>Cloud-Anbieter<input id="m-cloud" value="${esc(b.cloud_provider ?? '')}" placeholder="z.B. Azure, AWS, GCP, On-Premise"></label>
+          <label>Hauptpartner / Hauptintegrator<input id="m-partner" value="${esc(b.main_partner ?? '')}" placeholder="z.B. Accenture, KPMG, IBM, Capgemini"></label>
+          <label>Vertragsende (Schätzung)<input id="m-contract" value="${esc(b.contract_end_estimate ?? '')}" placeholder="z.B. Q3 2027 oder 2026"></label>
+          <label>IT-Budget-Schätzung (Mio €)<input id="m-itb" type="number" step="0.1" value="${b.it_budget_estimate_mn ?? ''}" placeholder="z.B. 45"></label>
         </div>
         <div class="modal-actions">
           <button onclick="closeModal()">Abbrechen</button>
@@ -1105,11 +1259,17 @@ function editBankModal(b) {
     </div>`;
   document.body.insertAdjacentHTML("beforeend", html);
   $("#m-save").onclick = async () => {
+    const sapRaw = $("#m-sap").value.trim();
     const payload = {
       employees: $("#m-emp").value ? parseInt($("#m-emp").value) : null,
       total_assets_eur_bn: $("#m-bal").value ? parseFloat($("#m-bal").value) : null,
       is_x1f_customer: $("#m-cust").checked,
       notes: $("#m-notes").value.trim() || null,
+      sap_modules: sapRaw ? sapRaw.split(",").map(s => s.trim()).filter(Boolean) : [],
+      cloud_provider: $("#m-cloud").value.trim() || null,
+      main_partner: $("#m-partner").value.trim() || null,
+      contract_end_estimate: $("#m-contract").value.trim() || null,
+      it_budget_estimate_mn: $("#m-itb").value ? parseFloat($("#m-itb").value) : null,
     };
     try { await apiCall("PATCH", `bank?id=${b.id}`, payload); closeModal(); navigate(); }
     catch (e) { alert("Fehler: " + e.message); }

@@ -233,6 +233,12 @@ table tbody tr.row-link { cursor: pointer; }
 .badge.segment { background: #eff6ff; color: #1e40af; border-color: #c8d9f5; }
 .badge.country { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
 .badge.dotted  { background: transparent; border-style: dashed; color: var(--text-muted); }
+.badge.stale   { background: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+
+.signal-stale  { opacity: 0.72; }
+
+:root { --danger-bg: #fef2f2; }
+[data-theme="dark"] { --danger-bg: #2d1515; }
 
 .heat-bar {
   display: inline-block;
