@@ -43,6 +43,15 @@ async function apiCall(method, path, body) {
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, m => (
   { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[m]
 ));
+
+function showToast(msg, type = "success", duration = 2800) {
+  const el = document.createElement("div");
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("toast-show"));
+  setTimeout(() => { el.classList.remove("toast-show"); setTimeout(() => el.remove(), 400); }, duration);
+}
 const fmt = (n) => n == null ? "—" : Number(n).toLocaleString("de-DE");
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("de-DE") : "—";
 const segmentLabel = {
@@ -480,7 +489,10 @@ async function renderLeads() {
 
   app.innerHTML = `
     <div class="page-header">
-      <div><h1>Alle Leads</h1><p>${banks.length} Banken mit aktiven Signalen</p></div>
+      <div>
+        <h1>Alle Leads</h1>
+        <p>${banks.length} Banken mit aktiven Signalen</p>
+      </div>
       <div class="filters">
         <input id="f-search" type="search" placeholder="Suche Bank…">
         <select id="f-segment"><option value="">Alle Segmente</option>${segments.map(s => `<option value="${s}">${segmentLabel[s] ?? s}</option>`).join("")}</select>
@@ -492,6 +504,7 @@ async function renderLeads() {
           <option value="name">Sort: Name</option>
         </select>
         <button id="export-csv" title="CSV exportieren">⬇ CSV</button>
+        ${EDIT_MODE ? `<button class="primary" onclick="window._createBank()">+ Bank anlegen</button>` : ""}
       </div>
     </div>
     <div class="section">
@@ -549,6 +562,7 @@ async function renderLeads() {
   };
   ["#f-search","#f-segment","#f-country","#f-sort"].forEach(s => $(s).addEventListener("input", renderRows));
   $("#export-csv").addEventListener("click", () => exportCSV(currentList, "leads"));
+  window._createBank = () => createBankModal();
   renderRows();
 }
 
@@ -1147,17 +1161,15 @@ async function renderBankDetail(bankId) {
   window._copyBattleCard = async () => {
     try {
       await navigator.clipboard.writeText(window._lastBattleCard ?? "");
-      const btn = event?.target;
-      if (btn) { const orig = btn.textContent; btn.textContent = "✓ Kopiert!"; setTimeout(() => btn.textContent = orig, 1500); }
-    } catch (e) { alert("Copy fehlgeschlagen: " + e.message); }
+      showToast("📋 Battle-Card in Zwischenablage kopiert!");
+    } catch (e) { showToast("Kopieren fehlgeschlagen: " + e.message, "error"); }
   };
 
   window._copyPitch = async () => {
     try {
       await navigator.clipboard.writeText(window._lastPitch ?? "");
-      const btn = event?.target;
-      if (btn) { const orig = btn.textContent; btn.textContent = "✓ Kopiert!"; setTimeout(() => btn.textContent = orig, 1500); }
-    } catch (e) { alert("Copy fehlgeschlagen: " + e.message); }
+      showToast("✉️ Pitch-Mail in Zwischenablage kopiert!");
+    } catch (e) { showToast("Kopieren fehlgeschlagen: " + e.message, "error"); }
   };
   window._generatePitch = async (signal_id, contact_id) => {
     try {
@@ -1642,12 +1654,16 @@ async function renderContacts() {
 
   app.innerHTML = `
     <div class="page-header">
-      <div><h1>Kontakte / Decision-Maker</h1><p>${all.length} Personen · ${all.filter(c => c.is_decision_maker).length} mit Entscheider-Funktion · ${all.filter(c => !c.is_placeholder).length} mit echtem Namen</p></div>
+      <div>
+        <h1>Kontakte / Decision-Maker</h1>
+        <p>${all.length} Personen · ${all.filter(c => c.is_decision_maker).length} Entscheider · ${all.filter(c => !c.is_placeholder).length} verifiziert</p>
+      </div>
       <div class="filters">
         <input id="f-q" type="search" placeholder="Suche Name/Bank…">
         <select id="f-sen"><option value="">Alle Seniority</option>${sens.map(s => `<option>${s}</option>`).join("")}</select>
         <select id="f-area"><option value="">Alle Bereiche</option>${areas.map(a => `<option>${esc(a)}</option>`).join("")}</select>
         <label class="small"><input type="checkbox" id="f-real"> nur reale (keine Platzhalter)</label>
+        ${EDIT_MODE ? `<button class="primary" onclick="window._newContactGlobal()">+ Kontakt anlegen</button>` : ""}
       </div>
     </div>
     <div class="section">
@@ -1681,11 +1697,29 @@ async function renderContacts() {
         <td><a href="#/bank/${c.bank_id}">${esc(c.bank)}</a></td>
         <td class="numeric">${c.influence_score ?? "—"}</td>
         <td class="small">${esc(c.previous_employer ?? "—")}</td>
-        <td class="right">${c.linkedin_url ? `<a href="${esc(c.linkedin_url)}" target="_blank">LinkedIn ↗</a>` : ""}</td>
+        <td class="right" style="white-space:nowrap">
+          ${c.linkedin_url ? `<a href="${esc(c.linkedin_url)}" target="_blank">LinkedIn ↗</a> ` : ""}
+          ${EDIT_MODE ? `<button class="icon-btn" onclick="window._editContactGlobal(${c.contact_id})" title="Bearbeiten">✎</button>
+          <button class="icon-btn danger" onclick="window._delContactGlobal(${c.contact_id})" title="Löschen">🗑</button>` : ""}
+        </td>
       </tr>`).join("");
   };
   ["#f-q","#f-sen","#f-area","#f-real"].forEach(s => $(s).addEventListener("input", render));
   render();
+  // edit-mode actions
+  window._newContactGlobal = async () => {
+    const { data: bankList } = await sb.from("banks").select("id, name").order("name");
+    editContactModal(null, null, null, bankList ?? []);
+  };
+  window._editContactGlobal = (id) => {
+    const c = all.find(x => x.contact_id === id);
+    if (c) editContactModal(id, c, c.bank_id);
+  };
+  window._delContactGlobal = async (id) => {
+    if (!confirm("Kontakt wirklich löschen?")) return;
+    try { await apiCall("DELETE", "contact?id=" + id); navigate(); }
+    catch (e) { showToast("Fehler: " + e.message, "error"); }
+  };
 }
 
 // ===========================================================================
