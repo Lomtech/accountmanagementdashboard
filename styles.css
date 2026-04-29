@@ -450,6 +450,41 @@ table tbody tr.row-link { cursor: pointer; }
   .net-search { width: 140px; }
 }
 
+/* ============= Footer ============= */
+.footer {
+  padding: 10px 24px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ============= Toast Notifications ============= */
+.toast {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0,0,0,.18);
+  z-index: 10000;
+  max-width: 360px;
+  transform: translateY(16px);
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(.22,1,.36,1), opacity 0.3s ease;
+  pointer-events: none;
+}
+.toast-show { transform: translateY(0); opacity: 1; }
+.toast-success { background: #166534; color: #fff; }
+.toast-error   { background: #b91c1c; color: #fff; }
+.toast-info    { background: #1d4ed8; color: #fff; }
+[data-theme="dark"] .toast-success { background: #15803d; }
+[data-theme="dark"] .toast-error   { background: #dc2626; }
+
 /* ============= Helpers ============= */
 .hidden { display: none !important; }
 .muted  { color: var(--text-muted); }

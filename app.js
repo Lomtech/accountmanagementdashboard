@@ -91,6 +91,16 @@ const initials = (name) => {
   return clean.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
 };
 const cleanName = (n) => (n || "").replace(/^\[Platzhalter\]\s*/, "");
+// Short display label for graph nodes — prevents long labels from overlapping
+const shortLabel = (n) => {
+  const clean = cleanName(n);
+  const parts = clean.trim().split(/\s+/);
+  if (parts.length <= 2) return clean;
+  // "Dr. Max Mustermann" → "Max Mustermann"
+  const skipTitles = /^(dr\.?|prof\.?|ing\.?|mag\.?)$/i;
+  const meaningful = parts.filter(p => !skipTitles.test(p));
+  return meaningful.length >= 2 ? meaningful[0] + " " + meaningful[meaningful.length - 1] : clean;
+};
 const segmentBadge = (s) => `<span class="badge segment">${esc(segmentLabel[s] ?? s)}</span>`;
 const countryBadge = (c) => `<span class="badge country">${esc(c)}</span>`;
 
@@ -1376,13 +1386,17 @@ function drawDetailGraph(allContacts, conns) {
 // ===========================================================================
 //   EDIT MODALS
 // ===========================================================================
-function editContactModal(id, c, bankId) {
+function editContactModal(id, c, bankId, banksList = null) {
   c = c ?? { bank_id: bankId, full_name: "", role_title: "", seniority: "Unbekannt", functional_area: "", influence_score: 50, relationship_score: 0, is_placeholder: false, linkedin_url: "", email: "", previous_employer: "", source_url: "" };
+  const bankSelect = (!id && banksList)
+    ? `<label>Bank *<select id="m-bank"><option value="">— Bank wählen —</option>${banksList.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join("")}</select></label>`
+    : "";
   const html = `
     <div class="modal-backdrop" id="modal">
       <div class="modal" style="max-width:520px">
         <h3>${id ? "Kontakt bearbeiten" : "Neuer Kontakt"}</h3>
         <div class="form-grid">
+          ${bankSelect}
           <label>Vollständiger Name<input id="m-name" value="${esc(cleanName(c.full_name ?? ''))}" placeholder="Vor Nachname"></label>
           <label>Rolle / Titel<input id="m-role" value="${esc(c.role_title ?? '')}"></label>
           <label>Seniority
@@ -1418,8 +1432,10 @@ function editContactModal(id, c, bankId) {
     </div>`;
   document.body.insertAdjacentHTML("beforeend", html);
   $("#m-save").onclick = async () => {
+    const resolvedBankId = banksList ? parseInt($("#m-bank")?.value ?? "0") : (bankId ?? c.bank_id);
+    if (!resolvedBankId) { showToast("Bitte eine Bank auswählen", "error"); return; }
     const payload = {
-      bank_id: c.bank_id,
+      bank_id: resolvedBankId,
       full_name: $("#m-name").value.trim(),
       role_title: $("#m-role").value.trim(),
       seniority: $("#m-sen").value,
@@ -1519,6 +1535,57 @@ function addConnectionModal(bankId, bankContacts) {
     if (!payload.contact_b) return alert("Kontakt B ID fehlt");
     try { await apiCall("POST", "connection", payload); closeModal(); navigate(); }
     catch (e) { alert("Fehler: " + e.message); }
+  };
+}
+
+function createBankModal() {
+  const segs = ['grossbank','landesbank','foerderbank','sparkasse','genossenschaft','privatbank','versicherung','investmentbank'];
+  const html = `
+    <div class="modal-backdrop" id="modal">
+      <div class="modal" style="max-width:520px">
+        <h3>+ Neue Bank / Neuen Lead anlegen</h3>
+        <div class="form-grid">
+          <label>Name der Bank *<input id="nb-name" placeholder="z.B. Musterbank AG" autofocus></label>
+          <label>Segment
+            <select id="nb-seg">
+              ${segs.map(s => `<option value="${s}">${segmentLabel[s] ?? s}</option>`).join("")}
+            </select>
+          </label>
+          <label>Land (ISO-Code)<input id="nb-country" value="DE" placeholder="DE, AT, CH…" maxlength="3"></label>
+          <label>Hauptsitz Stadt<input id="nb-city" placeholder="Frankfurt"></label>
+          <label>Domain<input id="nb-domain" placeholder="musterbank.de"></label>
+          <label>Mitarbeiter<input id="nb-emp" type="number" placeholder="5000"></label>
+          <label>Bilanzsumme (Mrd €)<input id="nb-assets" type="number" step="0.1" placeholder="45.5"></label>
+          <label>Notizen<textarea id="nb-notes" rows="2" placeholder="Erste Infos, Quelle…"></textarea></label>
+          <label class="checkbox"><input id="nb-cust" type="checkbox"> x1F-Bestandskunde</label>
+        </div>
+        <div class="modal-actions">
+          <button onclick="closeModal()">Abbrechen</button>
+          <button class="primary" id="nb-save">Anlegen</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+  $("#nb-save").onclick = async () => {
+    const name = $("#nb-name").value.trim();
+    if (!name) { showToast("Name ist Pflichtfeld", "error"); return; }
+    const payload = {
+      name,
+      segment:              $("#nb-seg").value,
+      country:              $("#nb-country").value.trim().toUpperCase() || "DE",
+      hq_city:              $("#nb-city").value.trim() || null,
+      domain:               $("#nb-domain").value.trim() || null,
+      employees:            $("#nb-emp").value ? parseInt($("#nb-emp").value) : null,
+      total_assets_eur_bn:  $("#nb-assets").value ? parseFloat($("#nb-assets").value) : null,
+      is_x1f_customer:      $("#nb-cust").checked,
+      notes:                $("#nb-notes").value.trim() || null,
+    };
+    try {
+      const j = await apiCall("POST", "bank", payload);
+      closeModal();
+      showToast(`✅ ${name} angelegt — ID ${j.bank?.id}`);
+      setTimeout(() => navigate(), 1200);
+    } catch (e) { showToast("Fehler: " + e.message, "error"); }
   };
 }
 
@@ -1785,8 +1852,7 @@ async function renderNetwork() {
           <div class="cy-zoom-controls">
             <button id="cy-zoom-in" title="Zoom +">+</button>
             <button id="cy-zoom-out" title="Zoom −">−</button>
-            <button id="cy-fit" title="Alle einpassen">⊡</button>
-            <button id="cy-center" title="Zentrieren">⊙</button>
+            <button id="cy-fit" title="Alle einpassen">⊡ Fit</button>
           </div>
         </div>
         <div class="net-legend">
@@ -1897,14 +1963,15 @@ async function renderNetwork() {
     _cyInst = cytoscape({
       container: $("#cy"),
       elements: [
-        ...n.map(x => ({ data: { ...x, displayLabel: cleanName(x.label) } })),
+        ...n.map(x => ({ data: { ...x, displayLabel: shortLabel(x.label) } })),
         ...e.map(ed => ({ data: { id: "e"+ed.id, ...ed } })),
       ],
       style: networkStyle(),
       layout: {
-        name: "cose", padding: 50, animate: false,
-        nodeRepulsion: 6000, idealEdgeLength: 100,
-        gravity: 0.25, numIter: 1000,
+        name: "cose", padding: 60, animate: true, animationDuration: 600,
+        nodeRepulsion: 8000, idealEdgeLength: 120,
+        gravity: 0.3, numIter: 1500,
+        nodeDimensionsIncludeLabels: true,
       },
     });
     _cyInst.on("tap", "node", (evt) => showNodeProfile(evt.target.data()));
@@ -1927,8 +1994,7 @@ async function renderNetwork() {
   });
   $("#cy-zoom-in")?.addEventListener("click",  () => _cyInst?.zoom({ level: (_cyInst.zoom() * 1.3), renderedPosition: { x: $("#cy").clientWidth/2, y: $("#cy").clientHeight/2 } }));
   $("#cy-zoom-out")?.addEventListener("click", () => _cyInst?.zoom({ level: (_cyInst.zoom() / 1.3), renderedPosition: { x: $("#cy").clientWidth/2, y: $("#cy").clientHeight/2 } }));
-  $("#cy-fit")?.addEventListener("click",    () => _cyInst?.fit(undefined, 40));
-  $("#cy-center")?.addEventListener("click", () => _cyInst?.center());
+  $("#cy-fit")?.addEventListener("click",    () => _cyInst?.animate({ fit: { eles: _cyInst.elements(), padding: 40 } }, { duration: 350 }));
 
   render();
 }
