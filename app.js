@@ -267,6 +267,7 @@ const routes = [
   { path: /^\/bank\/(\d+)$/,          render: (m) => renderBankDetail(parseInt(m[1])) },
   { path: /^\/signals$/,              render: renderSignals },
   { path: /^\/contacts$/,             render: renderContacts },
+  { path: /^\/contact\/(\d+)$/,       render: (m) => renderContactDetail(parseInt(m[1])) },
   { path: /^\/network$/,              render: renderNetwork },
 ];
 
@@ -1323,6 +1324,109 @@ function simpleMarkdownToHtml(md) {
   return `<p>${html}</p>`;
 }
 
+async function renderContactDetail(id) {
+  app.innerHTML = `<div class="loading">Lade Kontakt…</div>`;
+  const [cRes, connRes] = await Promise.all([
+    sb.from("contacts").select("*, banks(name, segment, hq_city)").eq("id", id).maybeSingle(),
+    sb.from("connections").select("*, a:contacts!contact_a(id,full_name,role_title,bank_id,banks(name)), b:contacts!contact_b(id,full_name,role_title,bank_id,banks(name))").or(`contact_a.eq.${id},contact_b.eq.${id}`),
+  ]);
+  if (!cRes.data) { app.innerHTML = `<div class="empty">Kontakt nicht gefunden.</div>`; return; }
+  const c = cRes.data;
+  const bank = c.banks;
+  const conns = connRes.data ?? [];
+  const inf = c.influence_score ?? 0;
+  const rel = c.relationship_score ?? 0;
+  const relColor = rel >= 70 ? "var(--good)" : rel >= 40 ? "var(--warn,#f59e0b)" : "var(--text-muted)";
+  const waNum = (c.phone ?? "").replace(/[^\d+]/g, "");
+  const seniorityColor = ["Vorstand","C-Level"].includes(c.seniority) ? "hot" : ["Bereichsleiter","Abteilungsleiter"].includes(c.seniority) ? "warn" : "cold";
+
+  const actionBtns = [
+    c.linkedin_url ? `<a href="${esc(c.linkedin_url)}" target="_blank" class="contact-action-btn contact-action-li">in LinkedIn</a>` : "",
+    c.email        ? `<a href="mailto:${esc(c.email)}" class="contact-action-btn contact-action-mail">✉ E-Mail</a>` : "",
+    waNum          ? `<a href="https://wa.me/${waNum}" target="_blank" class="contact-action-btn contact-action-wa">💬 WhatsApp</a>` : "",
+    `<button class="contact-action-btn contact-action-pitch" onclick="window._genContactPitch(${c.id},'${(cleanName(c.full_name ?? "")).replace(/'/g,"\\'")}','${((bank?.name ?? "")).replace(/'/g,"\\'")}')">✨ Ansprache generieren</button>`,
+  ].filter(Boolean).join("");
+
+  const connHtml = conns.length === 0 ? `<p class="muted small">Keine Verbindungen erfasst.</p>` : conns.map(cn => {
+    const other = cn.contact_a === id ? cn.b : cn.a;
+    const otherBank = other?.banks?.name ?? "";
+    return `<a href="#/contact/${other?.id}" class="conn-card">
+      <div class="conn-avatar">${initials(other?.full_name ?? "?")}</div>
+      <div class="conn-info">
+        <div class="conn-name">${esc(cleanName(other?.full_name ?? "—"))}</div>
+        <div class="small muted">${esc(other?.role_title ?? "—")}${otherBank ? ` · ${esc(otherBank)}` : ""}</div>
+        <div class="small" style="margin-top:2px"><span class="badge segment small">${esc(RELATIONSHIP_LABELS[cn.relationship] ?? cn.relationship)}</span></div>
+      </div>
+    </a>`;
+  }).join("");
+
+  app.innerHTML = `
+    <div class="section" style="max-width:760px;margin:0 auto">
+      <div style="margin-bottom:16px">
+        <a href="javascript:history.back()" class="small muted">← Zurück</a>
+        ${bank ? ` · <a href="#/bank/${c.bank_id}" class="small">${esc(bank.name)}</a>` : ""}
+        · <a href="#/contacts" class="small">Alle Kontakte</a>
+      </div>
+
+      <div class="contact-detail-card">
+        <div class="contact-detail-header">
+          <div class="contact-detail-avatar">${initials(c.full_name)}</div>
+          <div class="contact-detail-meta">
+            <h2 style="margin:0 0 4px">${esc(cleanName(c.full_name))}</h2>
+            <div class="muted" style="font-size:15px">${esc(c.role_title ?? "—")}</div>
+            ${bank ? `<div class="small muted" style="margin-top:2px">${esc(bank.name)}${bank.hq_city ? ` · ${esc(bank.hq_city)}` : ""}</div>` : ""}
+            <div class="net-profile-chips" style="margin-top:10px">
+              ${c.is_decision_maker ? `<span class="net-badge net-badge-star">⭐ Entscheider</span>` : ""}
+              ${c.seniority ? `<span class="badge ${seniorityColor}">${esc(c.seniority)}</span>` : ""}
+              ${c.functional_area ? `<span class="badge segment">${esc(c.functional_area)}</span>` : ""}
+              ${c.is_placeholder ? `<span class="badge dotted">Platzhalter</span>` : `<span class="badge x1f small">verifiziert</span>`}
+            </div>
+          </div>
+          ${EDIT_MODE ? `<button class="icon-btn" onclick="window._editContactGlobal(${c.id})" title="Bearbeiten" style="margin-left:auto">✏️</button>` : ""}
+        </div>
+
+        <div class="contact-detail-actions">${actionBtns}</div>
+
+        <div class="contact-detail-grid">
+          <div class="contact-detail-scores">
+            <div class="score-row">
+              <span class="small muted">Einfluss</span>
+              <div class="mini-bar" style="flex:1"><div class="mini-bar-fill" style="width:${inf}%"></div></div>
+              <span class="small" style="width:28px;text-align:right">${inf}</span>
+            </div>
+            <div class="score-row">
+              <span class="small muted">Beziehung</span>
+              <div class="mini-bar" style="flex:1"><div class="mini-bar-fill" style="width:${rel}%;background:${relColor}"></div></div>
+              <span class="small" style="width:28px;text-align:right">${rel}</span>
+            </div>
+          </div>
+
+          <div class="contact-detail-facts">
+            ${c.email ? `<div class="fact-row"><span class="muted">E-Mail</span><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></div>` : ""}
+            ${c.phone ? `<div class="fact-row"><span class="muted">Telefon</span><span>${esc(c.phone)}</span></div>` : ""}
+            ${c.previous_employer ? `<div class="fact-row"><span class="muted">Vorher bei</span><span>${esc(c.previous_employer)}</span></div>` : ""}
+            ${c.alma_mater ? `<div class="fact-row"><span class="muted">Hochschule</span><span>${esc(c.alma_mater)}</span></div>` : ""}
+            ${c.last_contacted_at ? `<div class="fact-row"><span class="muted">Letzter Kontakt</span><span>${fmtDate(c.last_contacted_at)}</span></div>` : ""}
+            ${c.source_url ? `<div class="fact-row"><span class="muted">Quelle</span><a href="${esc(c.source_url)}" target="_blank">Öffnen ↗</a></div>` : ""}
+          </div>
+        </div>
+
+        ${c.notes ? `<div style="margin-top:16px;padding:12px;background:var(--surface-2);border-radius:var(--radius);font-size:13px">${esc(c.notes)}</div>` : ""}
+      </div>
+
+      <h3 style="margin-top:28px;margin-bottom:12px">Verbindungen (${conns.length})</h3>
+      <div class="conn-grid">${connHtml}</div>
+    </div>`;
+
+  if (EDIT_MODE) {
+    window._editContactGlobal = async (cid) => {
+      const { data: bankList } = await sb.from("banks").select("id, name").order("name");
+      const cc = await sb.from("contacts").select("*").eq("id", cid).maybeSingle();
+      if (cc.data) editContactModal(cid, cc.data, cc.data.bank_id, bankList ?? []);
+    };
+  }
+}
+
 function renderContactItem(c, editable) {
   const inf = c.influence_score ?? 0;
   const rel = c.relationship_score ?? 0;
@@ -1334,7 +1438,7 @@ function renderContactItem(c, editable) {
     <div class="contact-item">
       <div class="avatar">${initials(c.full_name)}</div>
       <div class="info">
-        <div class="name">${esc(cleanName(c.full_name))}
+        <div class="name"><a href="#/contact/${c.id}" style="color:inherit;font-weight:700">${esc(cleanName(c.full_name))}</a>
           ${realBadge}</div>
         <div class="role">${esc(c.role_title ?? "")} ${c.functional_area ? `· ${esc(c.functional_area)}` : ""}</div>
         ${c.previous_employer ? `<div class="small muted">vorher: ${esc(c.previous_employer)}</div>` : ""}
@@ -1780,7 +1884,7 @@ async function renderContacts() {
     $("#c-body").innerHTML = list.length === 0 ? `<tr><td colspan="9" class="empty">Keine Treffer.</td></tr>` : list.map(c => `
       <tr>
         <td class="muted small">${c.contact_id}</td>
-        <td><strong>${esc(cleanName(c.full_name))}</strong>
+        <td><a href="#/contact/${c.contact_id}" style="font-weight:700;color:inherit">${esc(cleanName(c.full_name))}</a>
             ${c.is_placeholder ? '<span class="badge dotted small">Platzhalter</span>' : '<span class="badge x1f small">verifiziert</span>'}</td>
         <td>${esc(c.role_title ?? "")}</td>
         <td>${c.seniority ? `<span class="badge ${c.seniority === 'Vorstand' ? 'hot' : 'cold'}">${esc(c.seniority)}</span>` : ""}</td>
@@ -1993,7 +2097,7 @@ async function renderNetwork() {
       <div class="net-profile">
         <div class="net-profile-color-bar" style="background:${funcColor}"></div>
         <div class="net-profile-body">
-          <div style="font-size:18px;font-weight:700;line-height:1.2">${esc(d.displayLabel)}</div>
+          <a href="#/contact/${d.id}" style="font-size:18px;font-weight:700;line-height:1.2;color:inherit;text-decoration:none">${esc(d.displayLabel)}</a>
           <div class="small muted" style="margin:4px 0 8px">${esc(d.role_title ?? "—")}</div>
           <div class="net-profile-chips">
             ${decisionBadge}
