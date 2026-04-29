@@ -125,6 +125,108 @@ function signalBadge(type) {
   return `<span class="badge" style="background:${m.color}15;color:${m.color};border-color:${m.color}40" title="${esc(type)}">${m.icon} ${esc(m.label)}</span>`;
 }
 
+// ===========================================================================
+//   FEATURE 1 + 3: Data-Completeness-Score & Timing-Score
+// ===========================================================================
+
+/**
+ * Berechne Data-Completeness-Score 0-100 für eine Bank.
+ * @param {object} bank  - Bank-Objekt aus `banks` Tabelle
+ * @param {Array}  contacts - Kontakte der Bank
+ * @param {Array}  signals  - Signale der Bank
+ */
+function calcCompletenessScore(bank, contacts, signals) {
+  let score = 0;
+  const now = Date.now();
+
+  // Hat mind. 1 echter Kontakt (kein Platzhalter): +20
+  if (contacts.some(c => !c.is_placeholder)) score += 20;
+
+  // Hat CIO/CDO/IT-Vorstand mit LinkedIn: +20
+  const itTitles = /cio|cdo|cto|it.vorstand|chief.information|chief.digital|chief.technology|bereichsvorstand.it/i;
+  if (contacts.some(c => !c.is_placeholder && itTitles.test(c.role_title ?? "") && c.linkedin_url)) score += 20;
+
+  // Hat sap_modules gefüllt: +15
+  if ((bank.sap_modules ?? []).length > 0) score += 15;
+
+  // Hat cloud_provider gefüllt: +10
+  if (bank.cloud_provider) score += 10;
+
+  // Hat main_partner gefüllt: +10
+  if (bank.main_partner) score += 10;
+
+  // Hat mind. 1 Signal in letzten 90 Tagen: +15
+  const d90 = 90 * 86400000;
+  if (signals.some(s => s.captured_at && (now - new Date(s.captured_at).getTime()) < d90)) score += 15;
+
+  // Hat contract_end_estimate: +10
+  if (bank.contract_end_estimate) score += 10;
+
+  return Math.min(100, score);
+}
+
+/**
+ * Rendere Daten-Qualitäts-Fortschrittsbalken HTML.
+ */
+function renderCompletenessBar(score) {
+  const color = score >= 70 ? "var(--good)" : score >= 40 ? "var(--warn)" : "var(--danger)";
+  const label = score >= 70 ? "Gut" : score >= 40 ? "Mittel" : "Lückenhaft";
+  return `
+    <div class="completeness-bar-wrap">
+      <div class="completeness-bar-label">
+        <span>Daten-Qualität: <strong>${score}%</strong></span>
+        <span class="completeness-label" style="color:${color}">${label}</span>
+      </div>
+      <div class="completeness-bar-track">
+        <div class="completeness-bar-fill" style="width:${score}%;background:${color}"></div>
+      </div>
+    </div>`;
+}
+
+/**
+ * Berechne Kauf-Timing-Score 0-100.
+ * @param {object} bank
+ * @param {Array}  signals
+ * @param {Array}  contacts
+ */
+function calcTimingScore(bank, signals, contacts) {
+  let score = 0;
+  const now = Date.now();
+  const d60 = 60 * 86400000;
+  const d90 = 90 * 86400000;
+
+  // Frische heiße Signale (relevance ≥ 70, < 60 Tage alt): +30
+  if (signals.some(s => (s.x1f_relevance ?? 0) >= 70 &&
+      s.signal_date && (now - new Date(s.signal_date).getTime()) < d60)) score += 30;
+
+  // Leadership-Change-Signal < 90 Tage: +25
+  if (signals.some(s => s.signal_type === "leadership_change" &&
+      s.signal_date && (now - new Date(s.signal_date).getTime()) < d90)) score += 25;
+
+  // Regulatory-Deadline-Signal vorhanden: +20
+  if (signals.some(s => s.signal_type === "regulatory_deadline")) score += 20;
+
+  // Tender/Ausschreibung-Signal < 60 Tage: +15
+  if (signals.some(s => s.signal_type === "tender" &&
+      s.signal_date && (now - new Date(s.signal_date).getTime()) < d60)) score += 15;
+
+  // Kein Kontakt im Status "contacted"/"meeting": +10
+  const hasActiveOutreach = signals.some(s =>
+    ["contacted","meeting"].includes(s.outreach_status));
+  if (!hasActiveOutreach) score += 10;
+
+  return Math.min(100, score);
+}
+
+/**
+ * Rendere Timing-Score-Badge HTML.
+ */
+function timingBadge(score) {
+  if (score >= 70) return `<span class="badge hot timing-badge" title="Timing-Score: ${score}">⏱ Jetzt! ${score}</span>`;
+  if (score >= 40) return `<span class="badge warm timing-badge" title="Timing-Score: ${score}">⏱ Bald ${score}</span>`;
+  return `<span class="badge cold timing-badge" title="Timing-Score: ${score}">⏱ Abwarten ${score}</span>`;
+}
+
 // ---- Status-Indikator -------------------------------------------------------
 async function pingDb() {
   try {
@@ -233,12 +335,13 @@ window.closeModal = () => { const m = $("#modal"); if (m) m.remove(); };
 // ===========================================================================
 async function renderBriefing() {
   app.innerHTML = `<div class="loading">Lade Briefing…</div>`;
-  const [topRes, hotRes, segRes, queueRes, tasksRes] = await Promise.all([
+  const [topRes, hotRes, segRes, queueRes, tasksRes, velRes] = await Promise.all([
     sb.from("v_top_leads").select("*").limit(50),
     sb.from("hot_signals").select("*"),
     sb.from("v_segment_heatmap").select("*"),
     sb.from("v_action_queue").select("*").limit(15),
     sb.from("v_overdue_tasks").select("*").limit(20),
+    sb.from("v_signal_velocity").select("*").limit(10),
   ]);
   if (topRes.error)   throw topRes.error;
   if (hotRes.error)   throw hotRes.error;
@@ -246,6 +349,7 @@ async function renderBriefing() {
   if (queueRes.error) throw queueRes.error;
   const banks = topRes.data ?? [], hot = hotRes.data ?? [], segs = segRes.data ?? [], queue = queueRes.data ?? [];
   const tasks = tasksRes.data ?? [];
+  const velocity = velRes.data ?? [];
   const totalSignals = banks.reduce((a,b) => a + (b.signals_90d ?? 0), 0);
   const totalBanksWithSignals = banks.length;
   const totalHot = hot.length;
@@ -267,10 +371,12 @@ async function renderBriefing() {
         <thead><tr>
           <th>Bank</th><th>Segment</th><th>Land</th>
           <th class="numeric">Signale</th><th class="numeric">Hot</th>
-          <th>Heat</th><th></th>
+          <th>Heat</th><th>⏱ Timing</th><th></th>
         </tr></thead>
         <tbody>
-          ${banks.slice(0, 10).map(b => `
+          ${banks.slice(0, 10).map(b => {
+            const ts = calcTimingScore(b, [], []);
+            return `
             <tr class="row-link" data-link="#/bank/${b.bank_id}">
               <td>${b.is_x1f_customer ? '<span class="badge x1f">⭐ Bestand</span> ' : ""}<strong>${esc(b.bank)}</strong>
                   <div class="small muted">${esc(b.hq_city ?? "")}</div></td>
@@ -279,11 +385,35 @@ async function renderBriefing() {
               <td class="numeric">${b.signals_90d}</td>
               <td class="numeric">${b.hot_signals}</td>
               <td>${heatBarFor(b.heat_score)} <span class="muted small">${b.heat_score}</span></td>
+              <td>${timingBadge(ts)}</td>
               <td class="right"><a href="#/bank/${b.bank_id}">Detail →</a></td>
-            </tr>`).join("")}
+            </tr>`;
+          }).join("")}
         </tbody>
       </table>
     </div>
+    ${velocity.length > 0 ? `
+    <div class="section velocity-widget">
+      <div class="section-header"><h2>📈 Signal-Velocity</h2><span class="muted small">Top-5 Banken mit stärkster Signal-Beschleunigung (30d vs. Vormonat)</span></div>
+      <table>
+        <thead><tr><th>Bank</th><th>Segment</th><th class="numeric">Signale 30d</th><th class="numeric">Vormonat</th><th class="numeric">Delta</th></tr></thead>
+        <tbody>
+          ${velocity.slice(0, 5).map(v => {
+            const deltaPos = (v.velocity_delta ?? 0) > 0;
+            const deltaNeg = (v.velocity_delta ?? 0) < 0;
+            const deltaColor = deltaPos ? "var(--good)" : deltaNeg ? "var(--danger)" : "var(--text-muted)";
+            const deltaSign = deltaPos ? "+" : "";
+            return `<tr>
+              <td><strong>${esc(v.bank)}</strong></td>
+              <td>${segmentBadge(v.segment)}</td>
+              <td class="numeric">${v.signals_30d}</td>
+              <td class="numeric muted">${v.signals_prev_30d}</td>
+              <td class="numeric" style="color:${deltaColor};font-weight:700">${deltaSign}${v.velocity_delta}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>` : ""}
     <div class="detail-grid">
       <div class="section">
         <div class="section-header"><h2>Action Queue</h2></div>
@@ -392,16 +522,29 @@ async function renderLeads() {
       }
     });
     currentList = list;
-    $("#leads-body").innerHTML = list.map(b => `
+    // Lightweight completeness estimate from v_top_leads columns
+    const quickScore = (b) => {
+      let s = 0;
+      if ((b.signals_90d ?? 0) > 0) s += 15;  // mind. 1 Signal 90d
+      if ((b.hot_signals ?? 0) > 0) s += 30;  // hot = frisch + relevant (proxy für mehrere Kriterien)
+      // v_top_leads hat keine tech-details → max möglicher Score hier ~45
+      // Wir skalieren auf 0-100 für die Badge-Logik (<40 = Lücken)
+      return Math.round((s / 45) * 100);
+    };
+    $("#leads-body").innerHTML = list.map(b => {
+      const qs = quickScore(b);
+      const gapBadge = qs < 40 ? `<span class="badge badge-gap" title="Daten-Qualität niedrig — Bank-Detail öffnen">⚠ Lücken</span>` : "";
+      return `
       <tr class="row-link" data-link="#/bank/${b.bank_id}">
-        <td>${b.is_x1f_customer ? '<span class="badge x1f">⭐</span> ' : ""}<strong>${esc(b.bank)}</strong>
+        <td>${b.is_x1f_customer ? '<span class="badge x1f">⭐</span> ' : ""}${gapBadge}<strong>${esc(b.bank)}</strong>
             <div class="small muted">${esc(b.hq_city ?? "")}</div></td>
         <td>${segmentBadge(b.segment)}</td><td>${countryBadge(b.country)}</td>
         <td class="numeric">${b.signals_90d}</td><td class="numeric">${b.hot_signals}</td>
         <td>${heatBarFor(b.heat_score)} <span class="muted small">${b.heat_score}</span></td>
         <td class="small">${esc((b.top_signals ?? "").split("\n")[0] ?? "")}</td>
         <td class="right"><a href="#/bank/${b.bank_id}">Detail →</a></td>
-      </tr>`).join("") || `<tr><td colspan="8" class="empty">Keine Treffer.</td></tr>`;
+      </tr>`;
+    }).join("") || `<tr><td colspan="8" class="empty">Keine Treffer.</td></tr>`;
     bindRowLinks();
   };
   ["#f-search","#f-segment","#f-country","#f-sort"].forEach(s => $(s).addEventListener("input", renderRows));
@@ -663,16 +806,27 @@ async function renderBankDetail(bankId) {
       </div>
       <div class="gap">
         <button class="primary" onclick="window._battleCard(${bankId})" title="Claude generiert ein Briefing für deinen Call">📋 Battle-Card</button>
+        <button onclick="window._introPfad(${bankId})" title="Kürzester Weg zu dieser Bank über dein Netzwerk">🔗 Intro-Pfad</button>
         <a href="#/leads">← Zurück</a>
       </div>
     </div>
 
+    ${(() => {
+      const compScore = calcCompletenessScore(b, contacts, signals);
+      const timingScore = calcTimingScore(b, signals, contacts);
+      return `
     <div class="cards">
       <div class="card accent"><div class="label">Heat-Score</div><div class="value">${heat || "—"}</div></div>
       <div class="card"><div class="label">Signale</div><div class="value">${signals.length}</div></div>
-      <div class="card"><div class="label">Hot Signale</div><div class="value">${signals.filter(s => s.x1f_relevance >= 70).length}</div></div>
+      <div class="card"><div class="label">Hot Signale</div><div class="value">${signals.filter(s => (s.x1f_relevance ?? 0) >= 70).length}</div></div>
       <div class="card"><div class="label">Kontakte</div><div class="value">${contacts.length}</div></div>
+      <div class="card"><div class="label">⏱ Kauf-Timing</div>
+        <div class="value" style="font-size:18px">${timingBadge(timingScore)}</div>
+        <div class="sub">${timingScore >= 70 ? "Jetzt aktiv werden!" : timingScore >= 40 ? "Bald opportun" : "Noch abwarten"}</div>
+      </div>
     </div>
+    ${renderCompletenessBar(compScore)}`;
+    })()}
 
     <div class="section research-section">
       <div class="section-header">
@@ -864,6 +1018,129 @@ async function renderBankDetail(bankId) {
     } catch (e) {
       $("#modal")?.remove();
       alert("Fehler: " + e.message);
+    }
+  };
+
+  // ---- Feature 4: Intro-Pfad-Finder (BFS über Connections-Graph) -----------
+  window._introPfad = async (bid) => {
+    // Lade alle Nodes & Edges aus den Network-Views
+    document.body.insertAdjacentHTML("beforeend", `
+      <div class="modal-backdrop" id="modal">
+        <div class="modal" style="max-width:640px">
+          <h3>🔗 Intro-Pfad wird berechnet…</h3>
+          <div class="loading">⏳</div>
+        </div>
+      </div>`);
+    try {
+      const [nodesRes, edgesRes] = await Promise.all([
+        sb.from("v_network_nodes").select("*"),
+        sb.from("v_network_edges").select("*"),
+      ]);
+      const allNodes = nodesRes.data ?? [];
+      const allEdges = edgesRes.data ?? [];
+
+      // Ziel: Kontakte der aktuellen Bank
+      const targetNodeIds = new Set(
+        allNodes.filter(n => String(n.bank_id) === String(bid)).map(n => String(n.id))
+      );
+
+      if (targetNodeIds.size === 0) {
+        $("#modal").remove();
+        document.body.insertAdjacentHTML("beforeend", `
+          <div class="modal-backdrop" id="modal">
+            <div class="modal" style="max-width:540px">
+              <h3>🔗 Intro-Pfad zu ${esc(b.name)}</h3>
+              <p class="muted">Keine Kontakte bei dieser Bank erfasst — zuerst Kontakte anlegen.</p>
+              <div class="modal-actions"><button class="primary" onclick="closeModal()">Schließen</button></div>
+            </div>
+          </div>`);
+        return;
+      }
+
+      // Erstelle Adjacency-Map
+      const adj = new Map(); // nodeId → [{neighborId, edgeData}]
+      for (const e of allEdges) {
+        const src = String(e.source), tgt = String(e.target);
+        if (!adj.has(src)) adj.set(src, []);
+        if (!adj.has(tgt)) adj.set(tgt, []);
+        adj.get(src).push({ neighbor: tgt, edge: e });
+        adj.get(tgt).push({ neighbor: src, edge: e });
+      }
+
+      // Wir nutzen "unsere" Kontakte als Startpunkte (Relationship-Score > 0 oder placeholder=false)
+      // Hier: alle non-target Nodes als potentielle eigene Kontakte / Vermittler
+      // BFS von jedem Target-Node — finde kürzesten Weg zu non-target Nodes die gut connected sind
+      // Einfachere Interpretation: BFS von allen Target-Nodes, max depth 3
+
+      const nodeMap = new Map(allNodes.map(n => [String(n.id), n]));
+
+      // Finde alle Pfade (BFS), max depth 3
+      const found = [];
+      for (const startId of targetNodeIds) {
+        const visited = new Set([startId]);
+        const queue = [[startId]]; // Pfade als Arrays von nodeIds
+        while (queue.length > 0 && found.length < 5) {
+          const path = queue.shift();
+          const last = path[path.length - 1];
+          if (!targetNodeIds.has(last) && path.length > 1) {
+            found.push([...path].reverse()); // Pfad umdrehen: Du → ... → Ziel
+          }
+          if (path.length >= 4) continue; // max depth 3 hops
+          for (const { neighbor } of (adj.get(last) ?? [])) {
+            if (!visited.has(neighbor)) {
+              visited.add(neighbor);
+              queue.push([...path, neighbor]);
+            }
+          }
+        }
+        if (found.length >= 5) break;
+      }
+
+      $("#modal").remove();
+
+      let pathHtml = "";
+      if (found.length === 0) {
+        pathHtml = `<div class="intro-pfad-none">
+          <p>Kein direkter Netzwerk-Pfad gefunden.</p>
+          <p class="muted small">Nutze die Battle-Card für Cold Outreach oder pflege weitere Verbindungen im Netzwerk-Graph.</p>
+          <button class="primary" onclick="closeModal();window._battleCard(${bid})">📋 Battle-Card für Cold Outreach</button>
+        </div>`;
+      } else {
+        pathHtml = `<div class="intro-pfad-list">
+          ${found.slice(0, 5).map((path, i) => {
+            const chain = path.map(nid => {
+              const n = nodeMap.get(nid);
+              if (!n) return `<span class="intro-node">?</span>`;
+              const isTarget = targetNodeIds.has(nid);
+              const isYou = i === 0 && nid === path[0] && !targetNodeIds.has(nid);
+              const cls = isTarget ? "intro-node intro-node--target" : "intro-node";
+              return `<span class="${cls}" title="${esc(n.role_title ?? "")} @ ${esc(n.bank ?? "")}">${esc((n.label ?? "").replace(/^\[Platzhalter\]\s*/,""))}<div class="intro-node-sub">${esc(n.bank ?? "")}</div></span>`;
+            });
+            // Insert Du → at start if path starts from non-target
+            const firstNode = nodeMap.get(path[0]);
+            const prefix = firstNode && !targetNodeIds.has(path[0]) ? "" : `<span class="intro-node intro-node--you">Du</span><span class="intro-arrow">→</span>`;
+            return `<div class="intro-pfad-item">
+              <div class="intro-pfad-label">Pfad ${i + 1}</div>
+              <div class="intro-chain">
+                ${prefix}${chain.join('<span class="intro-arrow">→</span>')}
+              </div>
+            </div>`;
+          }).join("")}
+        </div>`;
+      }
+
+      document.body.insertAdjacentHTML("beforeend", `
+        <div class="modal-backdrop" id="modal">
+          <div class="modal" style="max-width:640px">
+            <h3>🔗 Intro-Pfad zu ${esc(b.name)}</h3>
+            <p class="muted small">Kürzester Netzwerk-Weg zu den Kontakten bei dieser Bank (max. 3 Hops).</p>
+            ${pathHtml}
+            <div class="modal-actions"><button class="primary" onclick="closeModal()">Schließen</button></div>
+          </div>
+        </div>`);
+    } catch (e) {
+      $("#modal")?.remove();
+      alert("Fehler beim Laden des Netzwerks: " + e.message);
     }
   };
 

@@ -654,6 +654,129 @@ body.edit-mode .kanban-card:active { cursor: grabbing; }
   .modal { min-width: auto; padding: 16px; }
 }
 
+/* ============= Feature 1: Data-Completeness-Bar ============= */
+.completeness-bar-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+.completeness-bar-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+.completeness-label {
+  font-weight: 700;
+  font-size: 12px;
+}
+.completeness-bar-track {
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.completeness-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width .4s ease;
+}
+
+/* ============= Feature 1: Gap badge in leads list ============= */
+.badge-gap {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+  margin-right: 4px;
+}
+
+/* ============= Feature 2: Signal-Velocity Widget ============= */
+.velocity-widget {
+  margin-bottom: 20px;
+}
+.velocity-widget .section-header h2 {
+  color: var(--accent);
+}
+
+/* ============= Feature 3: Timing-Badge ============= */
+.timing-badge {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+
+/* ============= Feature 4: Intro-Pfad Modal ============= */
+.intro-pfad-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 16px 0;
+}
+.intro-pfad-item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+}
+.intro-pfad-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.intro-chain {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.intro-arrow {
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  padding-top: 8px;
+  flex-shrink: 0;
+}
+.intro-node {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  min-width: 80px;
+}
+.intro-node--you {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.intro-node--target {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: var(--good);
+}
+.intro-node-sub {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.intro-pfad-none {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-muted);
+}
+.intro-pfad-none p { margin: 8px 0; }
+
 /* ============= Print Styles ============= */
 @media print {
   @page { margin: 14mm; }
