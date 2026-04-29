@@ -1181,6 +1181,27 @@ async function renderBankDetail(bankId) {
       showToast("✉️ Pitch-Mail in Zwischenablage kopiert!");
     } catch (e) { showToast("Kopieren fehlgeschlagen: " + e.message, "error"); }
   };
+  window._genContactPitch = async (contactId, contactName, bankName) => {
+    try {
+      const tone = prompt("Tonalität? (z.B. professionell-knapp / freundlich / direkt)", "professionell-knapp");
+      if (tone === null) return;
+      const j = await apiCall("POST", "contact-pitch", { contact_id: contactId, tone });
+      window._lastPitch = j.pitch ?? "";
+      const html = `
+        <div class="modal-backdrop" id="modal">
+          <div class="modal" style="max-width:640px">
+            <h3>Persönliche Ansprache — ${esc(contactName ?? "Kontakt")}</h3>
+            <div class="small muted" style="margin-bottom:12px">${esc(bankName ?? "")} · Generiert mit ${esc(j.model ?? "Claude")}</div>
+            <div class="pitch-output">${esc(j.pitch)}</div>
+            <div class="modal-actions">
+              <button onclick="window._copyPitch()">📋 In Zwischenablage</button>
+              <button class="primary" onclick="closeModal()">Schließen</button>
+            </div>
+          </div>
+        </div>`;
+      document.body.insertAdjacentHTML("beforeend", html);
+    } catch (e) { showToast("Fehler: " + e.message, "error"); }
+  };
   window._generatePitch = async (signal_id, contact_id) => {
     try {
       const tone = prompt("Tonalität? (z.B. professionell-knapp / freundlich / formell)", "professionell-knapp");
@@ -1317,11 +1338,13 @@ function renderContactItem(c, editable) {
           ${realBadge}</div>
         <div class="role">${esc(c.role_title ?? "")} ${c.functional_area ? `· ${esc(c.functional_area)}` : ""}</div>
         ${c.previous_employer ? `<div class="small muted">vorher: ${esc(c.previous_employer)}</div>` : ""}
-        <div class="small">
-          ${c.linkedin_url ? `<a href="${esc(c.linkedin_url)}" target="_blank">LinkedIn ↗</a>` : ""}
-          ${c.email ? ` · <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ""}
-          ${c.source_url && !c.is_placeholder ? ` · <a href="${esc(c.source_url)}" target="_blank">Quelle ↗</a>` : ""}
-          ${c.last_contacted_at ? ` · <span class="muted">Zuletzt: ${fmtDate(c.last_contacted_at)}</span>` : ""}
+        <div class="small" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:4px">
+          ${c.linkedin_url ? `<a href="${esc(c.linkedin_url)}" target="_blank" class="contact-action-btn contact-action-li" title="LinkedIn">in</a>` : ""}
+          ${c.email ? `<a href="mailto:${esc(c.email)}" class="contact-action-btn contact-action-mail" title="${esc(c.email)}">✉</a>` : ""}
+          ${c.phone ? `<a href="https://wa.me/${(c.phone ?? "").replace(/[^\d+]/g, "")}" target="_blank" class="contact-action-btn contact-action-wa" title="WhatsApp: ${esc(c.phone)}">💬</a>` : ""}
+          <button class="contact-action-btn contact-action-pitch" onclick="window._genContactPitch(${c.id},'${(cleanName(c.full_name ?? "")).replace(/'/g,"\\'")}','')">✨ Ansprache</button>
+          ${c.source_url && !c.is_placeholder ? `<a href="${esc(c.source_url)}" target="_blank" class="small muted">Quelle ↗</a>` : ""}
+          ${c.last_contacted_at ? `<span class="muted">· Zuletzt: ${fmtDate(c.last_contacted_at)}</span>` : ""}
         </div>
       </div>
       <div class="stat">
@@ -1401,7 +1424,7 @@ function editContactModal(id, c, bankId, banksList = null) {
           <label>Rolle / Titel<input id="m-role" value="${esc(c.role_title ?? '')}"></label>
           <label>Seniority
             <select id="m-sen">
-              ${["Vorstand","C-Level","Bereichsleiter","Abteilungsleiter","Senior","IC","Unbekannt"].map(x =>
+              ${["Vorstand","C-Level","Bereichsleiter","Abteilungsleiter","Mittleres Management","Senior","Angestellter","IC","Unbekannt"].map(x =>
                 `<option${x === (c.seniority ?? 'Unbekannt') ? " selected" : ""}>${x}</option>`).join("")}
             </select>
           </label>
@@ -1420,6 +1443,7 @@ function editContactModal(id, c, bankId, banksList = null) {
           <label>Letzter Kontakt<input id="m-lc" type="date" value="${c.last_contacted_at ?? ''}"></label>
           <label>LinkedIn-URL<input id="m-li" value="${esc(c.linkedin_url ?? '')}"></label>
           <label>E-Mail<input id="m-email" type="email" value="${esc(c.email ?? '')}"></label>
+          <label>Telefon / WhatsApp<input id="m-phone" type="tel" value="${esc(c.phone ?? '')}" placeholder="+49 170 ..."></label>
           <label>Vorheriger Arbeitgeber<input id="m-prev" value="${esc(c.previous_employer ?? '')}"></label>
           <label>Quellen-URL<input id="m-src" value="${esc(c.source_url ?? '')}"></label>
           <label class="checkbox"><input id="m-pl" type="checkbox" ${c.is_placeholder ? "checked" : ""}> Platzhalter (keine echte Person)</label>
@@ -1444,10 +1468,11 @@ function editContactModal(id, c, bankId, banksList = null) {
       last_contacted_at: $("#m-lc").value || null,
       linkedin_url: $("#m-li").value.trim() || null,
       email: $("#m-email").value.trim() || null,
+      phone: $("#m-phone").value.trim() || null,
       previous_employer: $("#m-prev").value.trim() || null,
       source_url: $("#m-src").value.trim() || null,
       is_placeholder: $("#m-pl").checked,
-      is_decision_maker: ["Vorstand","C-Level","Bereichsleiter"].includes($("#m-sen").value),
+      is_decision_maker: ["Vorstand","C-Level","Bereichsleiter","Abteilungsleiter"].includes($("#m-sen").value),
     };
     try {
       if (id) await apiCall("PATCH", `contact?id=${id}`, payload);
@@ -1764,7 +1789,10 @@ async function renderContacts() {
         <td class="numeric">${c.influence_score ?? "—"}</td>
         <td class="small">${esc(c.previous_employer ?? "—")}</td>
         <td class="right" style="white-space:nowrap">
-          ${c.linkedin_url ? `<a href="${esc(c.linkedin_url)}" target="_blank">LinkedIn ↗</a> ` : ""}
+          ${c.linkedin_url ? `<a href="${esc(c.linkedin_url)}" target="_blank" class="contact-action-btn contact-action-li" title="LinkedIn">in</a>` : ""}
+          ${c.email ? `<a href="mailto:${esc(c.email)}" class="contact-action-btn contact-action-mail" title="${esc(c.email)}">✉</a>` : ""}
+          ${c.phone ? `<a href="https://wa.me/${(c.phone ?? "").replace(/[^\d+]/g, "")}" target="_blank" class="contact-action-btn contact-action-wa" title="WhatsApp">💬</a>` : ""}
+          <button class="contact-action-btn contact-action-pitch" onclick="window._genContactPitch(${c.contact_id},'${(cleanName(c.full_name ?? "")).replace(/'/g,"\\'")}','${(c.bank ?? "").replace(/'/g,"\\'")}')">✨</button>
           ${EDIT_MODE ? `<button class="icon-btn" onclick="window._editContactGlobal(${c.contact_id})" title="Bearbeiten">✎</button>
           <button class="icon-btn danger" onclick="window._delContactGlobal(${c.contact_id})" title="Löschen">🗑</button>` : ""}
         </td>
@@ -1954,7 +1982,13 @@ async function renderNetwork() {
     const fc = FUNC_COLORS[fkey] ?? FUNC_COLORS.other;
     const funcColor = fc.base;
     const decisionBadge = d.is_decision_maker ? `<span class="net-badge net-badge-star">⭐ Entscheider</span>` : "";
-    const linkedIn = d.linkedin_url ? `<a href="${esc(d.linkedin_url)}" target="_blank" class="btn btn-sm" style="margin-top:8px">LinkedIn →</a>` : "";
+    const waNum = (d.phone ?? "").replace(/[^\d+]/g, "");
+    const actionBtns = [
+      d.linkedin_url ? `<a href="${esc(d.linkedin_url)}" target="_blank" class="contact-action-btn contact-action-li" title="LinkedIn öffnen">in</a>` : "",
+      d.email       ? `<a href="mailto:${esc(d.email)}" class="contact-action-btn contact-action-mail" title="${esc(d.email)}">✉</a>` : "",
+      waNum         ? `<a href="https://wa.me/${waNum}" target="_blank" class="contact-action-btn contact-action-wa" title="WhatsApp">💬</a>` : "",
+    ].filter(Boolean).join("");
+    const pitchBtn = `<button class="contact-action-btn contact-action-pitch" onclick="window._genContactPitch(${d.id},'${(d.displayLabel ?? "").replace(/'/g,"\\'")}','${(d.bank ?? "").replace(/'/g,"\\'")}')">✨ Ansprache</button>`;
     $("#cy-sidebar").innerHTML = `
       <div class="net-profile">
         <div class="net-profile-color-bar" style="background:${funcColor}"></div>
@@ -1966,12 +2000,13 @@ async function renderNetwork() {
             <span class="net-badge">${esc(d.seniority ?? "Unbekannt")}</span>
             <span class="net-badge" style="background:${funcColor}18;color:${funcColor};border-color:${funcColor}30">${esc(d.functional_area ?? "—")}</span>
           </div>
+          ${(actionBtns || pitchBtn) ? `<div class="contact-action-row">${actionBtns}${pitchBtn}</div>` : ""}
           <div class="net-profile-row"><span class="muted">Unternehmen</span>${d.bank_id ? `<a href="#/bank/${d.bank_id}">${esc(d.bank ?? "—")}</a>` : `<span>${esc(d.bank ?? "—")}</span>`}</div>
           <div class="net-profile-row"><span class="muted">Einfluss</span><div style="display:flex;align-items:center;gap:8px"><div class="mini-bar"><div class="mini-bar-fill" style="width:${d.influence_score ?? 0}%;background:${funcColor}"></div></div><span>${d.influence_score ?? "—"}</span></div></div>
           ${d.email ? `<div class="net-profile-row"><span class="muted">E-Mail</span><a href="mailto:${esc(d.email)}">${esc(d.email)}</a></div>` : ""}
+          ${d.phone ? `<div class="net-profile-row"><span class="muted">Telefon</span><span>${esc(d.phone)}</span></div>` : ""}
           ${d.alma_mater ? `<div class="net-profile-row"><span class="muted">Alma Mater</span>${esc(d.alma_mater)}</div>` : ""}
           ${d.previous_employer ? `<div class="net-profile-row"><span class="muted">Vorher bei</span>${esc(d.previous_employer)}</div>` : ""}
-          ${linkedIn}
           <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
             <div class="small muted" style="margin-bottom:6px">Verbindungen (${edges.filter(e => e.source === d.id || e.target === d.id).length})</div>
             ${edges.filter(e => e.source === d.id || e.target === d.id).slice(0,5).map(e => {

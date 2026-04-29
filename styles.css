@@ -610,6 +610,28 @@ button.icon-btn:hover { background: var(--surface-2); }
 }
 body.edit-mode .contact-actions { display: flex; }
 
+/* ============= Contact Action Buttons (Email / WhatsApp / LinkedIn / Pitch) ============= */
+.contact-action-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 3px 9px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  border: 1.5px solid var(--border); background: var(--surface);
+  color: var(--text-muted); cursor: pointer; text-decoration: none;
+  transition: all .15s ease; gap: 4px; white-space: nowrap;
+}
+.contact-action-btn:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.contact-action-li  { color: #0a66c2; border-color: #0a66c240; background: #eff6ff; }
+.contact-action-li:hover  { background: #0a66c2; color: #fff; border-color: #0a66c2; }
+.contact-action-mail { color: #7c3aed; border-color: #7c3aed40; background: #f5f3ff; }
+.contact-action-mail:hover { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+.contact-action-wa  { color: #16a34a; border-color: #16a34a40; background: #f0fdf4; }
+.contact-action-wa:hover  { background: #16a34a; color: #fff; border-color: #16a34a; }
+.contact-action-pitch { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-soft); }
+.contact-action-pitch:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.contact-action-row {
+  display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0;
+}
+
 /* ============= Modal ============= */
 .modal-backdrop {
   position: fixed; inset: 0;
